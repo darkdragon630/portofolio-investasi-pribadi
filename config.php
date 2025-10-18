@@ -49,30 +49,59 @@ foreach ($upload_dirs as $dir) {
 
 // PDO Connection
 try {
-    $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
+    // 1. Bangun DSN lengkap (port tetap 10272)
+    $dsn = sprintf(
+        'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+        DB_HOST,
+        DB_Port,
+        DB_NAME,
+        DB_CHARSET
+    );
+
+    // 2. Opsi default + SSL + timeout
     $options = [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
-        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
+        PDO::ATTR_TIMEOUT            => 5,               // 5 detik
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
+        // SSL: cloud provider yang mewajibkan SSL tidak akan menolak
+        PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false,
+        PDO::MYSQL_ATTR_SSL_KEY                => null,
+        PDO::MYSQL_ATTR_SSL_CERT               => null,
+        PDO::MYSQL_ATTR_SSL_CA                 => null,
     ];
-    
+
+    // 3. Buat koneksi
     $koneksi = new PDO($dsn, DB_USER, DB_PASS, $options);
-    
+
 } catch (PDOException $e) {
-    // Log error
-    error_log("Database Connection Error: " . $e->getMessage());
-    
-    // Display user-friendly error
+    // 4. Log lengkap
+    error_log(
+        sprintf(
+            "[%s] PDO connection failed: %s (DSN: %s)",
+            date('Y-m-d H:i:s'),
+            $e->getMessage(),
+            $dsn ?? 'unknown'
+        ),
+        3,
+        __DIR__ . '/logs/php_errors.log'
+    );
+
+    // 5. Tampilkan error tetap ramah user
     die("
     <div style='font-family: Arial; padding: 50px; text-align: center;'>
         <h2 style='color: #e74c3c;'>⚠️ Database Connection Failed</h2>
         <p>Tidak dapat terhubung ke database. Silakan cek konfigurasi.</p>
-        <p style='color: #7f8c8d; font-size: 14px;'>Error: " . $e->getMessage() . "</p>
+        <p style='color: #7f8c8d; font-size: 14px;'>
+            Error: " . $e->getMessage() . "
+        </p>
+        <p style='color: #95a5a6; font-size: 12px;'>
+            Host: " . DB_HOST . ':' . DB_Port . "
+        </p>
     </div>
     ");
 }
-
 /**
  * Helper Functions
  */

@@ -5,10 +5,11 @@
  */
 
 // Database credentials
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'sazen_v3');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_HOST', 'db.fr-pari1.bengt.wasmernet.com');
+define('DB_NAME', 'dbP2q6UBWSHN9Rj63Z9Vk5DV');
+define('DB_USER', '3b526cc07850800092db8371257f');
+define('DB_PASS', '068f3b52-6cc1-7b0b-8000-f27d9e875bf7');
+define('DB_Port', '10272');
 define('DB_CHARSET', 'utf8mb4');
 
 // Timezone

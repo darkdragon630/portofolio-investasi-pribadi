@@ -1,39 +1,45 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * Database Configuration
+ * Database Configuration (Fixed Non-SSL Connection)
  */
 
+// ==============================
 // Database credentials
+// ==============================
 define('DB_HOST', 'db.fr-pari1.bengt.wasmernet.com');
 define('DB_NAME', 'dbP2q6UBWSHN9Rj63Z9Vk5DV');
 define('DB_USER', '3b526cc07850800092db8371257f');
 define('DB_PASS', '068f3b52-6cc1-7b0b-8000-f27d9e875bf7');
-define('DB_Port', '10272');
+define('DB_PORT', 10272);
 define('DB_CHARSET', 'utf8mb4');
 
-// Timezone
+// ==============================
+// Environment settings
+// ==============================
 date_default_timezone_set('Asia/Jakarta');
 
-// Error reporting (development mode)
+// Error reporting (development)
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/php_errors.log');
 
-// Session configuration
+// Session hardening
 ini_set('session.cookie_httponly', 1);
 ini_set('session.use_strict_mode', 1);
 ini_set('session.cookie_samesite', 'Strict');
 
+// ==============================
 // Upload configuration
+// ==============================
 define('UPLOAD_DIR_INVESTASI', __DIR__ . '/uploads/bukti_investasi/');
 define('UPLOAD_DIR_KEUNTUNGAN', __DIR__ . '/uploads/bukti_keuntungan/');
 define('UPLOAD_DIR_KERUGIAN', __DIR__ . '/uploads/bukti_kerugian/');
 define('MAX_FILE_SIZE', 5 * 1024 * 1024); // 5MB
 define('ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'pdf']);
 
-// Create upload directories if not exist
+// Create upload directories if missing
 $upload_dirs = [
     UPLOAD_DIR_INVESTASI,
     UPLOAD_DIR_KEUNTUNGAN,
@@ -47,39 +53,40 @@ foreach ($upload_dirs as $dir) {
     }
 }
 
+// ==============================
 // PDO Connection
+// ==============================
 try {
-    // 1. Bangun DSN lengkap (port tetap 10272)
     $dsn = sprintf(
         'mysql:host=%s;port=%d;dbname=%s;charset=%s',
         DB_HOST,
-        DB_Port,
+        DB_PORT,
         DB_NAME,
         DB_CHARSET
     );
 
-    // 2. Opsi default + SSL + timeout
     $options = [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
-        PDO::ATTR_TIMEOUT            => 5,               // 5 detik
+        PDO::ATTR_TIMEOUT            => 5,
         PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
-        // SSL: cloud provider yang mewajibkan SSL tidak akan menolak
-        PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false,
-        PDO::MYSQL_ATTR_SSL_KEY                => null,
-        PDO::MYSQL_ATTR_SSL_CERT               => null,
-        PDO::MYSQL_ATTR_SSL_CA                 => null,
     ];
 
-    // 3. Buat koneksi
-    $koneksi = new PDO($dsn, DB_USER, DB_PASS, $options);
+    try {
+        // Koneksi utama (tanpa SSL)
+        $koneksi = new PDO($dsn, DB_USER, DB_PASS, $options);
+    } catch (PDOException $e1) {
+        // Fallback: paksa non-SSL mode
+        $dsn_no_ssl = $dsn . ';sslmode=disabled';
+        $koneksi = new PDO($dsn_no_ssl, DB_USER, DB_PASS, $options);
+    }
 
 } catch (PDOException $e) {
-    // 4. Log lengkap
+    // Log error koneksi
     error_log(
         sprintf(
-            "[%s] PDO connection failed: %s (DSN: %s)",
+            "[%s] PDO connection failed: %s (DSN: %s)\n",
             date('Y-m-d H:i:s'),
             $e->getMessage(),
             $dsn ?? 'unknown'
@@ -88,23 +95,24 @@ try {
         __DIR__ . '/logs/php_errors.log'
     );
 
-    // 5. Tampilkan error tetap ramah user
+    // Pesan ramah untuk user
     die("
     <div style='font-family: Arial; padding: 50px; text-align: center;'>
         <h2 style='color: #e74c3c;'>⚠️ Database Connection Failed</h2>
         <p>Tidak dapat terhubung ke database. Silakan cek konfigurasi.</p>
         <p style='color: #7f8c8d; font-size: 14px;'>
-            Error: " . $e->getMessage() . "
+            Error: " . htmlspecialchars($e->getMessage()) . "
         </p>
         <p style='color: #95a5a6; font-size: 12px;'>
-            Host: " . DB_HOST . ':' . DB_Port . "
+            Host: " . DB_HOST . ':' . DB_PORT . "
         </p>
     </div>
     ");
 }
-/**
- * Helper Functions
- */
+
+// ==============================
+// Helper Functions
+// ==============================
 
 // Sanitize input
 function sanitize_input($input) {
@@ -114,12 +122,12 @@ function sanitize_input($input) {
 // Parse currency input (support Rp 1.000,50 or 1000.50)
 function parse_currency($value) {
     if (empty($value)) return 0;
-    
+
     $value = preg_replace('/[^\d\.\,]/', '', $value);
-    
+
     $lastComma = strrpos($value, ',');
     $lastDot = strrpos($value, '.');
-    
+
     if ($lastComma === false && $lastDot === false) {
         return (float)$value;
     } elseif ($lastComma !== false && $lastDot !== false) {
@@ -145,27 +153,27 @@ function handle_file_upload($file, $upload_dir) {
     if (!isset($file) || $file['error'] === UPLOAD_ERR_NO_FILE) {
         return null;
     }
-    
+
     if ($file['error'] !== UPLOAD_ERR_OK) {
         throw new Exception('Upload error: ' . $file['error']);
     }
-    
+
     if ($file['size'] > MAX_FILE_SIZE) {
         throw new Exception('File terlalu besar. Maksimal ' . (MAX_FILE_SIZE / 1024 / 1024) . ' MB');
     }
-    
+
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     if (!in_array($ext, ALLOWED_EXTENSIONS)) {
         throw new Exception('Format file tidak didukung. Hanya: ' . implode(', ', ALLOWED_EXTENSIONS));
     }
-    
+
     $filename = time() . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
     $filepath = $upload_dir . $filename;
-    
+
     if (!move_uploaded_file($file['tmp_name'], $filepath)) {
         throw new Exception('Gagal menyimpan file');
     }
-    
+
     return $filename;
 }
 

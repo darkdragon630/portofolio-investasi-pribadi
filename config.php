@@ -23,19 +23,21 @@ date_default_timezone_set('Asia/Jakarta');
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('log_errors', 1);
-ini_set('error_log', __DIR__ . '/logs/php_errors.log');
+ini_set('error_log', __DIR__ . '/../logs/php_errors.log');
 
 // Session hardening
-ini_set('session.cookie_httponly', 1);
-ini_set('session.use_strict_mode', 1);
-ini_set('session.cookie_samesite', 'Strict');
+if (session_status() === PHP_SESSION_NONE) {
+    ini_set('session.cookie_httponly', 1);
+    ini_set('session.use_strict_mode', 1);
+    ini_set('session.cookie_samesite', 'Strict');
+}
 
 // ==============================
 // Upload configuration
 // ==============================
-define('UPLOAD_DIR_INVESTASI', __DIR__ . '/uploads/bukti_investasi/');
-define('UPLOAD_DIR_KEUNTUNGAN', __DIR__ . '/uploads/bukti_keuntungan/');
-define('UPLOAD_DIR_KERUGIAN', __DIR__ . '/uploads/bukti_kerugian/');
+define('UPLOAD_DIR_INVESTASI', __DIR__ . '/../uploads/bukti_investasi/');
+define('UPLOAD_DIR_KEUNTUNGAN', __DIR__ . '/../uploads/bukti_keuntungan/');
+define('UPLOAD_DIR_KERUGIAN', __DIR__ . '/../uploads/bukti_kerugian/');
 define('MAX_FILE_SIZE', 5 * 1024 * 1024); // 5MB
 define('ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'pdf']);
 
@@ -44,7 +46,7 @@ $upload_dirs = [
     UPLOAD_DIR_INVESTASI,
     UPLOAD_DIR_KEUNTUNGAN,
     UPLOAD_DIR_KERUGIAN,
-    __DIR__ . '/logs/'
+    __DIR__ . '/../logs/'
 ];
 
 foreach ($upload_dirs as $dir) {
@@ -92,7 +94,7 @@ try {
             $dsn ?? 'unknown'
         ),
         3,
-        __DIR__ . '/logs/php_errors.log'
+        __DIR__ . '/../logs/php_errors.log'
     );
 
     // Pesan ramah untuk user
@@ -188,20 +190,7 @@ function delete_file($filename, $upload_dir) {
 function log_security_event($event, $details = '') {
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN';
     $log_entry = date('Y-m-d H:i:s') . " | $ip | $event | $details" . PHP_EOL;
-    error_log($log_entry, 3, __DIR__ . '/logs/security.log');
-}
-
-// Generate CSRF token
-function generate_csrf_token() {
-    if (!isset($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    }
-    return $_SESSION['csrf_token'];
-}
-
-// Validate CSRF token
-function validate_csrf_token($token) {
-    return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
+    error_log($log_entry, 3, __DIR__ . '/../logs/security.log');
 }
 
 // Redirect with message

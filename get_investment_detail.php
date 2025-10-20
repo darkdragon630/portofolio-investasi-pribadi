@@ -1,7 +1,7 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * AJAX Endpoint - Get Investment Detail (JSON Support)
+ * AJAX Endpoint - Get Investment Detail (Database Storage)
  */
 
 require_once 'config/koneksi.php';
@@ -60,22 +60,22 @@ try {
         exit;
     }
     
-    // Get bukti file data from JSON
+    // Get bukti file data from DATABASE
     $bukti_data = null;
     if ($investment['bukti_file']) {
-        $file_data = get_file_from_json($investment['bukti_file'], JSON_FILE_INVESTASI);
-        if ($file_data) {
+        $file_info = parse_bukti_file($investment['bukti_file']);
+        if ($file_info) {
             $bukti_data = [
-                'file_id' => $file_data['id'],
-                'original_name' => $file_data['original_name'],
-                'extension' => $file_data['extension'],
-                'size' => $file_data['size'],
-                'size_formatted' => format_file_size($file_data['size']),
-                'mime_type' => $file_data['mime_type'],
-                'uploaded_at' => $file_data['uploaded_at'],
-                'preview_url' => 'view_file.php?type=investasi&id=' . $file_data['id'],
-                'is_image' => in_array($file_data['extension'], ['jpg', 'jpeg', 'png']),
-                'is_pdf' => $file_data['extension'] === 'pdf'
+                'original_name' => $file_info['original_name'],
+                'extension' => $file_info['extension'],
+                'size' => $file_info['size'],
+                'size_formatted' => format_file_size($file_info['size']),
+                'mime_type' => $file_info['mime_type'],
+                'uploaded_at' => $file_info['uploaded_at'],
+                'preview_url' => 'view_file.php?type=investasi&id=' . $investment['id'],
+                'download_url' => 'view_file.php?type=investasi&id=' . $investment['id'] . '&download=1',
+                'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png']),
+                'is_pdf' => $file_info['extension'] === 'pdf'
             ];
         }
     }
@@ -153,26 +153,26 @@ try {
         'tanggal_investasi' => $investment['tanggal_investasi'],
         'tanggal_investasi_formatted' => date('d F Y', strtotime($investment['tanggal_investasi'])),
         'nama_kategori' => $investment['nama_kategori'],
-        'bukti_file' => $investment['bukti_file'],
+        'has_bukti' => !empty($investment['bukti_file']),
         'bukti_data' => $bukti_data,
         'keuntungan' => [],
         'kerugian' => []
     ];
     
-    // Format keuntungan with bukti data
+    // Format keuntungan with bukti data from DATABASE
     foreach ($keuntungan_list as $k) {
         $keuntungan_bukti = null;
         if ($k['bukti_file']) {
-            $file_data = get_file_from_json($k['bukti_file'], JSON_FILE_KEUNTUNGAN);
-            if ($file_data) {
+            $file_info = parse_bukti_file($k['bukti_file']);
+            if ($file_info) {
                 $keuntungan_bukti = [
-                    'file_id' => $file_data['id'],
-                    'original_name' => $file_data['original_name'],
-                    'extension' => $file_data['extension'],
-                    'size_formatted' => format_file_size($file_data['size']),
-                    'preview_url' => 'view_file.php?type=keuntungan&id=' . $file_data['id'],
-                    'is_image' => in_array($file_data['extension'], ['jpg', 'jpeg', 'png']),
-                    'is_pdf' => $file_data['extension'] === 'pdf'
+                    'original_name' => $file_info['original_name'],
+                    'extension' => $file_info['extension'],
+                    'size_formatted' => format_file_size($file_info['size']),
+                    'preview_url' => 'view_file.php?type=keuntungan&id=' . $k['id'],
+                    'download_url' => 'view_file.php?type=keuntungan&id=' . $k['id'] . '&download=1',
+                    'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png']),
+                    'is_pdf' => $file_info['extension'] === 'pdf'
                 ];
             }
         }
@@ -186,26 +186,28 @@ try {
             'tanggal_keuntungan' => $k['tanggal_keuntungan'],
             'tanggal_keuntungan_formatted' => date('d M Y', strtotime($k['tanggal_keuntungan'])),
             'sumber_keuntungan' => $k['sumber_keuntungan'],
+            'sumber_keuntungan_formatted' => ucwords(str_replace('_', ' ', $k['sumber_keuntungan'])),
             'status' => $k['status'],
-            'bukti_file' => $k['bukti_file'],
+            'status_formatted' => ucfirst($k['status']),
+            'has_bukti' => !empty($k['bukti_file']),
             'bukti_data' => $keuntungan_bukti
         ];
     }
     
-    // Format kerugian with bukti data
+    // Format kerugian with bukti data from DATABASE
     foreach ($kerugian_list as $k) {
         $kerugian_bukti = null;
         if ($k['bukti_file']) {
-            $file_data = get_file_from_json($k['bukti_file'], JSON_FILE_KERUGIAN);
-            if ($file_data) {
+            $file_info = parse_bukti_file($k['bukti_file']);
+            if ($file_info) {
                 $kerugian_bukti = [
-                    'file_id' => $file_data['id'],
-                    'original_name' => $file_data['original_name'],
-                    'extension' => $file_data['extension'],
-                    'size_formatted' => format_file_size($file_data['size']),
-                    'preview_url' => 'view_file.php?type=kerugian&id=' . $file_data['id'],
-                    'is_image' => in_array($file_data['extension'], ['jpg', 'jpeg', 'png']),
-                    'is_pdf' => $file_data['extension'] === 'pdf'
+                    'original_name' => $file_info['original_name'],
+                    'extension' => $file_info['extension'],
+                    'size_formatted' => format_file_size($file_info['size']),
+                    'preview_url' => 'view_file.php?type=kerugian&id=' . $k['id'],
+                    'download_url' => 'view_file.php?type=kerugian&id=' . $k['id'] . '&download=1',
+                    'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png']),
+                    'is_pdf' => $file_info['extension'] === 'pdf'
                 ];
             }
         }
@@ -219,8 +221,10 @@ try {
             'tanggal_kerugian' => $k['tanggal_kerugian'],
             'tanggal_kerugian_formatted' => date('d M Y', strtotime($k['tanggal_kerugian'])),
             'sumber_kerugian' => $k['sumber_kerugian'],
+            'sumber_kerugian_formatted' => ucwords(str_replace('_', ' ', $k['sumber_kerugian'])),
             'status' => $k['status'],
-            'bukti_file' => $k['bukti_file'],
+            'status_formatted' => ucfirst($k['status']),
+            'has_bukti' => !empty($k['bukti_file']),
             'bukti_data' => $kerugian_bukti
         ];
     }
@@ -229,18 +233,19 @@ try {
     echo json_encode([
         'success' => true,
         'investment' => $response_data
-    ]);
+    ], JSON_PRETTY_PRINT);
     
 } catch (Exception $e) {
     // Log error
     error_log("Get Investment Detail Error: " . $e->getMessage());
+    error_log("Stack trace: " . $e->getTraceAsString());
     
     // Error response
     http_response_code(500);
     echo json_encode([
         'success' => false,
         'message' => 'Internal server error',
-        'error' => $e->getMessage() // Hanya untuk development
+        'error' => $e->getMessage() // Remove in production
     ]);
 }
 

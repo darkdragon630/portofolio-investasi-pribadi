@@ -1,608 +1,842 @@
 <?php
-require_once 'config.php';
+require_once 'config/koneksi.php';
 
-// Query investasi dengan keuntungan dan kerugian
-$sql_investasi = "
-    SELECT i.id, i.judul_investasi, i.deskripsi, i.jumlah, i.tanggal_investasi, i.bukti_file,
-           k.nama_kategori,
-           COALESCE(SUM(ki.jumlah_keuntungan), 0) as total_keuntungan_item,
-           COALESCE(SUM(kr.jumlah_kerugian), 0) as total_kerugian_item
-    FROM investasi i
-    JOIN kategori k ON i.kategori_id = k.id
-    LEFT JOIN keuntungan_investasi ki ON i.id = ki.investasi_id
-    LEFT JOIN kerugian_investasi kr ON i.id = kr.investasi_id
-    GROUP BY i.id
-    ORDER BY i.tanggal_investasi DESC
-";
-$stmt = $koneksi->query($sql_investasi);
-$investasi = $stmt->fetchAll();
-
-// Statistik keseluruhan
-$sql_stats = "
-    SELECT 
-        COALESCE(SUM(i.jumlah), 0) as total_investasi,
-        COALESCE(SUM(ki.jumlah_keuntungan), 0) as total_keuntungan,
-        COALESCE(SUM(kr.jumlah_kerugian), 0) as total_kerugian,
-        (COALESCE(SUM(i.jumlah), 0) + COALESCE(SUM(ki.jumlah_keuntungan), 0) - COALESCE(SUM(kr.jumlah_kerugian), 0)) as total_nilai
-    FROM investasi i
-    LEFT JOIN keuntungan_investasi ki ON i.id = ki.investasi_id
-    LEFT JOIN kerugian_investasi kr ON i.id = kr.investasi_id
-";
+// Ambil statistik global
+$sql_stats = "SELECT * FROM v_statistik_global";
 $stmt_stats = $koneksi->query($sql_stats);
 $stats = $stmt_stats->fetch();
 
-$total_investasi = (float)$stats['total_investasi'];
-$total_keuntungan = (float)$stats['total_keuntungan'];
-$total_kerugian = (float)$stats['total_kerugian'];
-$total_nilai = (float)$stats['total_nilai'];
+// Ambil semua investasi dengan summary
+$sql_investasi = "
+    SELECT 
+        i.id,
+        i.judul_investasi,
+        i.deskripsi,
+        i.jumlah as modal_investasi,
+        i.tanggal_investasi,
+        i.bukti_file,
+        k.nama_kategori,
+        COALESCE(SUM(ku.jumlah_keuntungan), 0) as total_keuntungan,
+        COALESCE(SUM(kr.jumlah_kerugian), 0) as total_kerugian,
+        (i.jumlah + COALESCE(SUM(ku.jumlah_keuntungan), 0) - COALESCE(SUM(kr.jumlah_kerugian), 0)) as nilai_sekarang,
+        CASE 
+            WHEN i.jumlah > 0 THEN ((COALESCE(SUM(ku.jumlah_keuntungan), 0) - COALESCE(SUM(kr.jumlah_kerugian), 0)) / i.jumlah * 100)
+            ELSE 0 
+        END as roi_persen
+    FROM investasi i
+    LEFT JOIN keuntungan_investasi ku ON i.id = ku.investasi_id
+    LEFT JOIN kerugian_investasi kr ON i.id = kr.investasi_id
+    JOIN kategori k ON i.kategori_id = k.id
+    GROUP BY i.id, i.judul_investasi, i.deskripsi, i.jumlah, i.tanggal_investasi, i.bukti_file, k.nama_kategori
+    ORDER BY i.tanggal_investasi DESC
+";
+$stmt_investasi = $koneksi->query($sql_investasi);
+$investasi_list = $stmt_investasi->fetchAll();
 
-// ROI
-$roi = $total_investasi > 0 ? (($total_keuntungan - $total_kerugian) / $total_investasi) * 100 : 0;
+// Ambil semua kategori untuk filter
+$sql_kategori = "SELECT * FROM kategori ORDER BY nama_kategori";
+$stmt_kategori = $koneksi->query($sql_kategori);
+$kategori_list = $stmt_kategori->fetchAll();
+
+// Ambil keuntungan terbaru (5 teratas)
+$sql_keuntungan = "
+    SELECT 
+        ki.id,
+        ki.judul_keuntungan,
+        ki.jumlah_keuntungan,
+        ki.tanggal_keuntungan,
+        ki.sumber_keuntungan,
+        i.judul_investasi,
+        k.nama_kategori
+    FROM keuntungan_investasi ki
+    JOIN investasi i ON ki.investasi_id = i.id
+    JOIN kategori k ON ki.kategori_id = k.id
+    ORDER BY ki.tanggal_keuntungan DESC
+    LIMIT 5
+";
+$stmt_keuntungan = $koneksi->query($sql_keuntungan);
+$keuntungan_list = $stmt_keuntungan->fetchAll();
+
+// Ambil kerugian terbaru (5 teratas)
+$sql_kerugian = "
+    SELECT 
+        kr.id,
+        kr.judul_kerugian,
+        kr.jumlah_kerugian,
+        kr.tanggal_kerugian,
+        kr.sumber_kerugian,
+        i.judul_investasi,
+        k.nama_kategori
+    FROM kerugian_investasi kr
+    JOIN investasi i ON kr.investasi_id = i.id
+    JOIN kategori k ON kr.kategori_id = k.id
+    ORDER BY kr.tanggal_kerugian DESC
+    LIMIT 5
+";
+$stmt_kerugian = $koneksi->query($sql_kerugian);
+$kerugian_list = $stmt_kerugian->fetchAll();
+
+// Hitung ROI global
+$total_investasi = $stats['total_investasi'] ?? 0;
+$total_keuntungan = $stats['total_keuntungan'] ?? 0;
+$total_kerugian = $stats['total_kerugian'] ?? 0;
+$total_nilai = $stats['total_nilai'] ?? 0;
+$net_profit = $total_keuntungan - $total_kerugian;
+$roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portofolio Investasi - SAAZ v2</title>
+    <meta name="description" content="Portofolio Investasi Pribadi - Muhammad Burhanudin Syaifullah Azmi">
+    <meta name="author" content="SAAZ">
+    <title>Portofolio Investasi - Shoutaverse Capital Group v3.0</title>
+    
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        :root {
-            --primary: #667eea;
-            --secondary: #764ba2;
-            --success: #10b981;
-            --danger: #ef4444;
-            --warning: #f59e0b;
-            --dark: #1e293b;
-            --light: #f1f5f9;
-        }
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #1e293b;
-        }
-        
-        .header {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            padding: 2rem;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        
-        .header-content {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        .header-title {
-            font-size: 2.5rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 0.5rem;
-        }
-        
-        .header-subtitle {
-            color: #64748b;
-            font-size: 1rem;
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1.5rem;
-            max-width: 1200px;
-            margin: -3rem auto 2rem;
-            padding: 0 2rem;
-        }
-        
-        .stat-card {
-            background: white;
-            border-radius: 1rem;
-            padding: 1.5rem;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            transition: transform 0.3s;
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-5px);
-        }
-        
-        .stat-label {
-            font-size: 0.875rem;
-            color: #64748b;
-            margin-bottom: 0.5rem;
-        }
-        
-        .stat-value {
-            font-size: 1.75rem;
-            font-weight: 700;
-            color: var(--dark);
-        }
-        
-        .stat-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1rem;
-            font-size: 1.5rem;
-        }
-        
-        .stat-card.investment .stat-icon {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-        }
-        
-        .stat-card.profit .stat-icon {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-        }
-        
-        .stat-card.loss .stat-icon {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-            color: white;
-        }
-        
-        .stat-card.total .stat-icon {
-            background: linear-gradient(135deg, #f59e0b, #d97706);
-            color: white;
-        }
-        
-        .main-content {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-        
-        .investments-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 2rem;
-            margin-top: 2rem;
-        }
-        
-        .investment-card {
-            background: white;
-            border-radius: 1rem;
-            overflow: hidden;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            transition: all 0.3s;
-        }
-        
-        .investment-card:hover {
-            transform: translateY(-8px);
-            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
-        }
-        
-        .card-header {
-            padding: 1.5rem;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: white;
-        }
-        
-        .card-title {
-            font-size: 1.25rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-        
-        .card-category {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            background: rgba(255,255,255,0.2);
-            border-radius: 20px;
-            font-size: 0.875rem;
-        }
-        
-        .card-body {
-            padding: 1.5rem;
-        }
-        
-        .amount-display {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--primary);
-            margin-bottom: 1rem;
-        }
-        
-        .profit-loss-info {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 1rem;
-            padding: 1rem;
-            background: var(--light);
-            border-radius: 0.5rem;
-        }
-        
-        .profit-info, .loss-info {
-            flex: 1;
-        }
-        
-        .profit-info {
-            color: var(--success);
-        }
-        
-        .loss-info {
-            color: var(--danger);
-        }
-        
-        .info-label {
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            margin-bottom: 0.25rem;
-        }
-        
-        .info-value {
-            font-size: 1.125rem;
-            font-weight: 600;
-        }
-        
-        .card-date {
-            color: #64748b;
-            font-size: 0.875rem;
-            margin-bottom: 1rem;
-        }
-        
-        .card-description {
-            color: #475569;
-            font-size: 0.875rem;
-            margin-bottom: 1.5rem;
-            line-height: 1.6;
-        }
-        
-        .card-actions {
-            display: flex;
-            gap: 0.75rem;
-        }
-        
-        .btn {
-            flex: 1;
-            padding: 0.75rem;
-            border: none;
-            border-radius: 0.5rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-align: center;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 4rem 2rem;
-            background: white;
-            border-radius: 1rem;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        }
-        
-        .empty-icon {
-            font-size: 4rem;
-            color: var(--primary);
-            margin-bottom: 1rem;
-        }
-        
-        .empty-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-        
-        .empty-description {
-            color: #64748b;
-            margin-bottom: 2rem;
-        }
-        
-        /* Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.7);
-            backdrop-filter: blur(5px);
-        }
-        
-        .modal.show {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .modal-content {
-            background: white;
-            border-radius: 1rem;
-            max-width: 800px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
-        }
-        
-        .modal-header {
-            padding: 2rem;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: white;
-            position: sticky;
-            top: 0;
-            z-index: 1;
-        }
-        
-        .modal-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-        }
-        
-        .modal-close {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            background: rgba(255,255,255,0.2);
-            border: none;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            color: white;
-            font-size: 1.5rem;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        
-        .modal-close:hover {
-            background: rgba(255,255,255,0.3);
-            transform: rotate(90deg);
-        }
-        
-        .modal-body {
-            padding: 2rem;
-        }
-        
-        .detail-section {
-            margin-bottom: 2rem;
-        }
-        
-        .detail-label {
-            font-weight: 600;
-            color: #64748b;
-            font-size: 0.875rem;
-            text-transform: uppercase;
-            margin-bottom: 0.5rem;
-        }
-        
-        .detail-value {
-            font-size: 1.125rem;
-            color: var(--dark);
-            margin-bottom: 1rem;
-        }
-        
-        .bukti-image {
-            width: 100%;
-            border-radius: 0.5rem;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        
-        @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
-                margin-top: -2rem;
-            }
-            
-            .investments-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .header-title {
-                font-size: 1.75rem;
-            }
-        }
-    </style>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <header class="header">
-        <div class="header-content">
-            <h1 class="header-title">
-                <i class="fas fa-chart-line"></i> Portofolio Investasi SAAZ
-            </h1>
-            <p class="header-subtitle">
-                <i class="fas fa-sync-alt"></i> Dashboard investasi pribadi dengan tracking lengkap
-            </p>
-        </div>
-    </header>
-
-    <div class="stats-grid">
-        <div class="stat-card investment">
-            <div class="stat-icon"><i class="fas fa-wallet"></i></div>
-            <div class="stat-label">Total Investasi</div>
-            <div class="stat-value">Rp <?= number_format($total_investasi, 0, ',', '.') ?></div>
-        </div>
-        
-        <div class="stat-card profit">
-            <div class="stat-icon"><i class="fas fa-arrow-trend-up"></i></div>
-            <div class="stat-label">Total Keuntungan</div>
-            <div class="stat-value">Rp <?= number_format($total_keuntungan, 0, ',', '.') ?></div>
-        </div>
-        
-        <div class="stat-card loss">
-            <div class="stat-icon"><i class="fas fa-arrow-trend-down"></i></div>
-            <div class="stat-label">Total Kerugian</div>
-            <div class="stat-value">Rp <?= number_format($total_kerugian, 0, ',', '.') ?></div>
-        </div>
-        
-        <div class="stat-card total">
-            <div class="stat-icon"><i class="fas fa-chart-pie"></i></div>
-            <div class="stat-label">Total Nilai (ROI: <?= number_format($roi, 2) ?>%)</div>
-            <div class="stat-value">Rp <?= number_format($total_nilai, 0, ',', '.') ?></div>
+    
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-content">
+            <div class="loading-logo">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+            </div>
+            <div class="loading-text">Memuat Portofolio...</div>
+            <div class="loading-progress">
+                <div class="progress-bar" id="loadingProgress"></div>
+            </div>
         </div>
     </div>
 
+    <!-- Header -->
+    <header class="header" id="header">
+        <div class="header-background">
+            <div class="gradient-orb orb-1"></div>
+            <div class="gradient-orb orb-2"></div>
+            <div class="gradient-orb orb-3"></div>
+        </div>
+        
+        <div class="container">
+            <div class="header-content">
+                <div class="logo-section">
+                    <div class="logo-icon">
+                        <i class="fas fa-chart-line"></i>
+                        <div class="logo-pulse"></div>
+                    </div>
+                    <div class="logo-text">
+                        <h1 class="logo-title">Shoutaverse Capital Group</h1>
+                        <p class="logo-subtitle">Portfolio Manager v3.0</p>
+                    </div>
+                </div>
+                
+                <div class="header-info">
+                    <h2 class="portfolio-title">
+                        <span class="title-main">Portofolio Investasi Pribadi</span>
+                        <span class="title-owner">Muhammad Burhanudin Syaifullah Azmi</span>
+                    </h2>
+                    <p class="portfolio-description">
+                        <i class="fas fa-info-circle"></i>
+                        Data diperbarui secara real-time dari dashboard admin
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="header-wave">
+            <svg viewBox="0 0 1200 120" preserveAspectRatio="none">
+                <path d="M0,0V46.29c47.79,22.2,103.59,32.17,158,28,70.36-5.37,136.33-33.31,206.8-37.5C438.64,32.43,512.34,53.67,583,72.05c69.27,18,138.3,24.88,209.4,13.08,36.15-6,69.85-17.84,104.45-29.34C989.49,25,1113-14.29,1200,52.47V0Z" opacity=".25"></path>
+                <path d="M0,0V15.81C13,36.92,27.64,56.86,47.69,72.05,99.41,111.27,165,111,224.58,91.58c31.15-10.15,60.09-26.07,89.67-39.8,40.92-19,84.73-46,130.83-49.67,36.26-2.85,70.9,9.42,98.6,31.56,31.77,25.39,62.32,62,103.63,73,40.44,10.79,81.35-6.69,119.13-24.28s75.16-39,116.92-43.05c59.73-5.85,113.28,22.88,168.9,38.84,30.2,8.66,59,6.17,87.09-7.5,22.43-10.89,48-26.93,60.65-49.24V0Z" opacity=".5"></path>
+                <path d="M0,0V5.63C149.93,59,314.09,71.32,475.83,42.57c43-7.64,84.23-20.12,127.61-26.46,59-8.63,112.48,12.24,165.56,35.4C827.93,77.22,886,95.24,951.2,90c86.53-7,172.46-45.71,248.8-84.81V0Z"></path>
+            </svg>
+        </div>
+    </header>
+
+    <!-- Main Content -->
     <main class="main-content">
-        <?php if ($investasi): ?>
-            <div class="investments-grid">
-                <?php foreach ($investasi as $item): 
-                    $net_profit = $item['total_keuntungan_item'] - $item['total_kerugian_item'];
-                    $net_color = $net_profit >= 0 ? 'var(--success)' : 'var(--danger)';
-                ?>
-                    <div class="investment-card">
-                        <div class="card-header">
-                            <h2 class="card-title"><?= htmlspecialchars($item['judul_investasi']) ?></h2>
-                            <span class="card-category">
-                                <i class="fas fa-tag"></i> <?= htmlspecialchars($item['nama_kategori']) ?>
-                            </span>
+        <div class="container">
+            
+            <!-- Statistics Cards -->
+            <section class="stats-section" data-aos="fade-up">
+                <div class="stats-grid">
+                    <div class="stat-card stat-primary">
+                        <div class="stat-icon">
+                            <i class="fas fa-wallet"></i>
                         </div>
-                        
-                        <div class="card-body">
-                            <div class="amount-display">
-                                Rp <?= number_format($item['jumlah'], 0, ',', '.') ?>
+                        <div class="stat-content">
+                            <div class="stat-label">Total Investasi</div>
+                            <div class="stat-value" data-value="<?= $total_investasi ?>">
+                                <?= format_currency($total_investasi) ?>
                             </div>
-                            
-                            <div class="profit-loss-info">
-                                <div class="profit-info">
-                                    <div class="info-label">Keuntungan</div>
-                                    <div class="info-value">+<?= number_format($item['total_keuntungan_item'], 0, ',', '.') ?></div>
-                                </div>
-                                <div class="loss-info">
-                                    <div class="info-label">Kerugian</div>
-                                    <div class="info-value">-<?= number_format($item['total_kerugian_item'], 0, ',', '.') ?></div>
-                                </div>
+                            <div class="stat-sublabel"><?= $stats['total_portofolio'] ?? 0 ?> Portofolio</div>
+                        </div>
+                        <div class="stat-glow"></div>
+                    </div>
+
+                    <div class="stat-card stat-success">
+                        <div class="stat-icon">
+                            <i class="fas fa-arrow-trend-up"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">Total Keuntungan</div>
+                            <div class="stat-value positive" data-value="<?= $total_keuntungan ?>">
+                                <?= format_currency($total_keuntungan) ?>
                             </div>
-                            
-                            <div style="text-align: center; padding: 0.75rem; background: <?= $net_color ?>; color: white; border-radius: 0.5rem; margin-bottom: 1rem; font-weight: 600;">
-                                Net: <?= $net_profit >= 0 ? '+' : '' ?><?= number_format($net_profit, 0, ',', '.') ?>
+                            <div class="stat-sublabel"><?= $stats['total_transaksi_keuntungan'] ?? 0 ?> Transaksi</div>
+                        </div>
+                        <div class="stat-glow"></div>
+                    </div>
+
+                    <div class="stat-card stat-danger">
+                        <div class="stat-icon">
+                            <i class="fas fa-arrow-trend-down"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">Total Kerugian</div>
+                            <div class="stat-value negative" data-value="<?= $total_kerugian ?>">
+                                <?= format_currency($total_kerugian) ?>
                             </div>
-                            
-                            <div class="card-date">
-                                <i class="fas fa-calendar"></i> <?= date('d M Y', strtotime($item['tanggal_investasi'])) ?>
+                            <div class="stat-sublabel"><?= $stats['total_transaksi_kerugian'] ?? 0 ?> Transaksi</div>
+                        </div>
+                        <div class="stat-glow"></div>
+                    </div>
+
+                    <div class="stat-card stat-info">
+                        <div class="stat-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-label">Total Nilai</div>
+                            <div class="stat-value" data-value="<?= $total_nilai ?>">
+                                <?= format_currency($total_nilai) ?>
                             </div>
-                            
-                            <?php if ($item['deskripsi']): ?>
-                                <div class="card-description">
-                                    <?= nl2br(htmlspecialchars(substr($item['deskripsi'], 0, 100))) ?>
-                                    <?= strlen($item['deskripsi']) > 100 ? '...' : '' ?>
-                                </div>
-                            <?php endif; ?>
-                            
-                            <div class="card-actions">
-                                <button class="btn btn-primary" onclick="showDetail(<?= $item['id'] ?>)">
-                                    <i class="fas fa-eye"></i> Detail
-                                </button>
+                            <div class="stat-sublabel">
+                                ROI: 
+                                <span class="<?= $roi_global >= 0 ? 'positive' : 'negative' ?>">
+                                    <?= number_format($roi_global, 2) ?>%
+                                </span>
                             </div>
+                        </div>
+                        <div class="stat-glow"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Quick Analytics -->
+            <section class="analytics-section" data-aos="fade-up" data-aos-delay="100">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <i class="fas fa-chart-pie"></i>
+                        Analisis Cepat
+                    </h2>
+                </div>
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <div class="analytics-header">
+                            <h4>Net Profit</h4>
+                            <i class="fas fa-coins"></i>
+                        </div>
+                        <div class="analytics-value <?= $net_profit >= 0 ? 'positive' : 'negative' ?>">
+                            <?= format_currency($net_profit) ?>
+                        </div>
+                        <div class="analytics-footer">
+                            Keuntungan - Kerugian
                         </div>
                     </div>
-                <?php endforeach; ?>
-            </div>
-        <?php else: ?>
-            <div class="empty-state">
-                <div class="empty-icon"><i class="fas fa-chart-line"></i></div>
-                <h3 class="empty-title">Belum Ada Data Investasi</h3>
-                <p class="empty-description">Mulai tambahkan investasi melalui dashboard admin</p>
-            </div>
-        <?php endif; ?>
+
+                    <div class="analytics-card">
+                        <div class="analytics-header">
+                            <h4>Performance</h4>
+                            <i class="fas fa-percent"></i>
+                        </div>
+                        <div class="analytics-value <?= $roi_global >= 0 ? 'positive' : 'negative' ?>">
+                            <?= number_format($roi_global, 2) ?>%
+                        </div>
+                        <div class="analytics-footer">
+                            Return on Investment
+                        </div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <div class="analytics-header">
+                            <h4>Profit Ratio</h4>
+                            <i class="fas fa-chart-bar"></i>
+                        </div>
+                        <div class="analytics-value info">
+                            <?php 
+                            $profit_ratio = $total_nilai > 0 ? ($total_keuntungan / $total_nilai * 100) : 0;
+                            echo number_format($profit_ratio, 2);
+                            ?>%
+                        </div>
+                        <div class="analytics-footer">
+                            Keuntungan / Total Nilai
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Recent Transactions -->
+            <section class="transactions-section" data-aos="fade-up" data-aos-delay="200">
+                <div class="transactions-container">
+                    <!-- Keuntungan Terbaru -->
+                    <div class="transaction-column">
+                        <div class="transaction-header">
+                            <h3><i class="fas fa-arrow-up"></i> Keuntungan Terbaru</h3>
+                        </div>
+                        <div class="transaction-list">
+                            <?php if (count($keuntungan_list) > 0): ?>
+                                <?php foreach ($keuntungan_list as $profit): ?>
+                                    <div class="transaction-item profit-item">
+                                        <div class="transaction-icon">
+                                            <i class="fas fa-plus-circle"></i>
+                                        </div>
+                                        <div class="transaction-content">
+                                            <h4><?= htmlspecialchars($profit['judul_keuntungan']) ?></h4>
+                                            <p><?= htmlspecialchars($profit['judul_investasi']) ?></p>
+                                            <span class="transaction-badge"><?= ucfirst(str_replace('_', ' ', $profit['sumber_keuntungan'])) ?></span>
+                                        </div>
+                                        <div class="transaction-amount positive">
+                                            +<?= format_currency($profit['jumlah_keuntungan']) ?>
+                                        </div>
+                                        <div class="transaction-date">
+                                            <?= date('d M Y', strtotime($profit['tanggal_keuntungan'])) ?>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <div class="empty-state">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>Belum ada data keuntungan</p>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Kerugian Terbaru -->
+                    <div class="transaction-column">
+                        <div class="transaction-header">
+                            <h3><i class="fas fa-arrow-down"></i> Kerugian Terbaru</h3>
+                        </div>
+                        <div class="transaction-list">
+                            <?php if (count($kerugian_list) > 0): ?>
+                                <?php foreach ($kerugian_list as $loss): ?>
+                                    <div class="transaction-item loss-item">
+                                        <div class="transaction-icon">
+                                            <i class="fas fa-minus-circle"></i>
+                                        </div>
+                                        <div class="transaction-content">
+                                            <h4><?= htmlspecialchars($loss['judul_kerugian']) ?></h4>
+                                            <p><?= htmlspecialchars($loss['judul_investasi']) ?></p>
+                                            <span class="transaction-badge"><?= ucfirst(str_replace('_', ' ', $loss['sumber_kerugian'])) ?></span>
+                                        </div>
+                                        <div class="transaction-amount negative">
+                                            -<?= format_currency($loss['jumlah_kerugian']) ?>
+                                        </div>
+                                        <div class="transaction-date">
+                                            <?= date('d M Y', strtotime($loss['tanggal_kerugian'])) ?>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <div class="empty-state">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>Belum ada data kerugian</p>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Portfolio Controls -->
+            <section class="portfolio-controls" data-aos="fade-up" data-aos-delay="300">
+                <div class="controls-header">
+                    <h2 class="section-title">
+                        <i class="fas fa-briefcase"></i>
+                        Daftar Investasi
+                    </h2>
+                    <div class="view-toggle">
+                        <button class="toggle-btn active" data-view="grid" title="Grid View">
+                            <i class="fas fa-th"></i>
+                        </button>
+                        <button class="toggle-btn" data-view="list" title="List View">
+                            <i class="fas fa-list"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="controls-filters">
+                    <!-- Search -->
+                    <div class="search-container">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="searchInput" class="search-input" placeholder="Cari investasi...">
+                    </div>
+
+                    <!-- Category Filter -->
+                    <div class="filter-group">
+                        <label for="categoryFilter">
+                            <i class="fas fa-filter"></i> Kategori
+                        </label>
+                        <select id="categoryFilter" class="filter-select">
+                            <option value="all">Semua Kategori</option>
+                            <?php foreach ($kategori_list as $kat): ?>
+                                <option value="<?= htmlspecialchars($kat['nama_kategori']) ?>">
+                                    <?= htmlspecialchars($kat['nama_kategori']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <!-- Sort -->
+                    <div class="filter-group">
+                        <label for="sortSelect">
+                            <i class="fas fa-sort"></i> Urutkan
+                        </label>
+                        <select id="sortSelect" class="filter-select">
+                            <option value="date-desc">Terbaru</option>
+                            <option value="date-asc">Terlama</option>
+                            <option value="amount-desc">Nilai Tertinggi</option>
+                            <option value="amount-asc">Nilai Terendah</option>
+                            <option value="roi-desc">ROI Tertinggi</option>
+                            <option value="roi-asc">ROI Terendah</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Investment Grid -->
+            <section class="investments-section" data-aos="fade-up" data-aos-delay="400">
+                <?php if (count($investasi_list) > 0): ?>
+                    <div class="investments-grid" id="investmentsGrid">
+                        <?php foreach ($investasi_list as $index => $item): ?>
+                            <div class="investment-card" 
+                                 data-category="<?= htmlspecialchars($item['nama_kategori']) ?>"
+                                 data-amount="<?= $item['modal_investasi'] ?>"
+                                 data-date="<?= $item['tanggal_investasi'] ?>"
+                                 data-title="<?= htmlspecialchars($item['judul_investasi']) ?>"
+                                 data-roi="<?= $item['roi_persen'] ?>"
+                                 style="animation-delay: <?= $index * 0.05 ?>s">
+                                
+                                <div class="card-glow"></div>
+                                
+                                <div class="card-header">
+                                    <div class="card-icon">
+                                        <i class="fas fa-chart-area"></i>
+                                    </div>
+                                    <div class="category-badge">
+                                        <i class="fas fa-tag"></i>
+                                        <?= htmlspecialchars($item['nama_kategori']) ?>
+                                    </div>
+                                </div>
+
+                                <div class="card-body">
+                                    <h3 class="card-title"><?= htmlspecialchars($item['judul_investasi']) ?></h3>
+                                    
+                                    <?php if (!empty($item['deskripsi'])): ?>
+                                        <p class="card-description"><?= nl2br(htmlspecialchars($item['deskripsi'])) ?></p>
+                                    <?php endif; ?>
+
+                                    <div class="card-stats">
+                                        <div class="stat-item">
+                                            <span class="stat-label">Modal</span>
+                                            <span class="stat-value"><?= format_currency($item['modal_investasi']) ?></span>
+                                        </div>
+                                        <div class="stat-item">
+                                            <span class="stat-label">Nilai Sekarang</span>
+                                            <span class="stat-value"><?= format_currency($item['nilai_sekarang']) ?></span>
+                                        </div>
+                                        <div class="stat-item">
+                                            <span class="stat-label">Keuntungan</span>
+                                            <span class="stat-value positive">+<?= format_currency($item['total_keuntungan']) ?></span>
+                                        </div>
+                                        <div class="stat-item">
+                                            <span class="stat-label">Kerugian</span>
+                                            <span class="stat-value negative">-<?= format_currency($item['total_kerugian']) ?></span>
+                                        </div>
+                                    </div>
+
+                                    <div class="card-roi">
+                                        <span class="roi-label">ROI</span>
+                                        <span class="roi-value <?= $item['roi_persen'] >= 0 ? 'positive' : 'negative' ?>">
+                                            <?= number_format($item['roi_persen'], 2) ?>%
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="card-footer">
+                                    <div class="card-date">
+                                        <i class="fas fa-calendar-alt"></i>
+                                        <?= date('d M Y', strtotime($item['tanggal_investasi'])) ?>
+                                    </div>
+                                    <button class="btn-detail" 
+                                            onclick="showInvestmentDetail(<?= $item['id'] ?>)"
+                                            data-id="<?= $item['id'] ?>">
+                                        <i class="fas fa-eye"></i> Detail
+                                    </button>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <div class="empty-portfolio" data-aos="fade-up">
+                        <div class="empty-icon">
+                            <i class="fas fa-folder-open"></i>
+                        </div>
+                        <h3>Belum Ada Investasi</h3>
+                        <p>Data investasi akan muncul di sini setelah ditambahkan</p>
+                    </div>
+                <?php endif; ?>
+            </section>
+
+        </div>
     </main>
 
-    <!-- Modal Detail -->
-    <div class="modal" id="detailModal">
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-wave">
+            <svg viewBox="0 0 1200 120" preserveAspectRatio="none">
+                <path d="M0,0V46.29c47.79,22.2,103.59,32.17,158,28,70.36-5.37,136.33-33.31,206.8-37.5C438.64,32.43,512.34,53.67,583,72.05c69.27,18,138.3,24.88,209.4,13.08,36.15-6,69.85-17.84,104.45-29.34C989.49,25,1113-14.29,1200,52.47V0Z" opacity=".25"></path>
+                <path d="M0,0V15.81C13,36.92,27.64,56.86,47.69,72.05,99.41,111.27,165,111,224.58,91.58c31.15-10.15,60.09-26.07,89.67-39.8,40.92-19,84.73-46,130.83-49.67,36.26-2.85,70.9,9.42,98.6,31.56,31.77,25.39,62.32,62,103.63,73,40.44,10.79,81.35-6.69,119.13-24.28s75.16-39,116.92-43.05c59.73-5.85,113.28,22.88,168.9,38.84,30.2,8.66,59,6.17,87.09-7.5,22.43-10.89,48-26.93,60.65-49.24V0Z" opacity=".5"></path>
+                <path d="M0,0V5.63C149.93,59,314.09,71.32,475.83,42.57c43-7.64,84.23-20.12,127.61-26.46,59-8.63,112.48,12.24,165.56,35.4C827.93,77.22,886,95.24,951.2,90c86.53-7,172.46-45.71,248.8-84.81V0Z"></path>
+            </svg>
+        </div>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <div class="footer-logo">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Shoutaverse Capital Group</span>
+                    </div>
+                    <p class="footer-tagline">Investment Portfolio Manager v3.0</p>
+                    <p class="footer-copyright">
+                        &copy; <?= date('Y') ?> Muhammad Burhanudin Syaifullah Azmi. All rights reserved.
+                    </p>
+                </div>
+
+                <div class="footer-links">
+                    <div class="footer-column">
+                        <h4>Navigasi</h4>
+                        <ul>
+                            <li><a href="#header"><i class="fas fa-home"></i> Beranda</a></li>
+                            <li><a href="#stats"><i class="fas fa-chart-bar"></i> Statistik</a></li>
+                            <li><a href="#portfolio"><i class="fas fa-briefcase"></i> Portofolio</a></li>
+                        </ul>
+                    </div>
+
+                    <div class="footer-column">
+                        <h4>Tools</h4>
+                        <ul>
+                            <li><a href="https://kalkulasiinvest.netlify.app/" target="_blank">
+                                <i class="fas fa-calculator"></i> Kalkulator ROI
+                            </a></li>
+                            <li><a href="#"><i class="fas fa-chart-pie"></i> Analisis</a></li>
+                            <li><a href="#"><i class="fas fa-file-export"></i> Export Data</a></li>
+                        </ul>
+                    </div>
+
+                    <div class="footer-column">
+                        <h4>Support</h4>
+                        <ul>
+                            <li><a href="#"><i class="fas fa-question-circle"></i> FAQ</a></li>
+                            <li><a href="#"><i class="fas fa-headset"></i> Bantuan</a></li>
+                            <li><a href="#"><i class="fas fa-envelope"></i> Kontak</a></li>
+                        </ul>
+                    </div>
+
+                    <div class="footer-column">
+                        <h4>Info</h4>
+                        <p class="footer-info">
+                            <i class="fas fa-info-circle"></i>
+                            Platform ini digunakan untuk mencatat dan memantau portofolio investasi pribadi secara real-time.
+                        </p>
+                        <div class="footer-stats">
+                            <span><i class="fas fa-database"></i> <?= count($investasi_list) ?> Investasi</span>
+                            <span><i class="fas fa-chart-line"></i> <?= count($keuntungan_list) ?> Profit</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <div class="footer-social">
+                    <a href="#" aria-label="GitHub"><i class="fab fa-github"></i></a>
+                    <a href="#" aria-label="LinkedIn"><i class="fab fa-linkedin"></i></a>
+                    <a href="#" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
+                    <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+                </div>
+                <div class="footer-version">
+                    <span class="version-badge">
+                        <i class="fas fa-code-branch"></i> Version 3.0.0
+                    </span>
+                    <span class="update-info">
+                        <i class="fas fa-clock"></i> Updated: <?= date('d M Y') ?>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scroll to Top Button -->
+    <button class="scroll-to-top" id="scrollToTop" aria-label="Scroll to top">
+        <i class="fas fa-arrow-up"></i>
+    </button>
+
+    <!-- Investment Detail Modal -->
+    <div class="modal" id="investmentModal">
+        <div class="modal-overlay" onclick="closeModal()"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title">Detail Investasi</h2>
-                <button class="modal-close" onclick="closeDetail()">&times;</button>
+                <h3 id="modalTitle">Detail Investasi</h3>
+                <button class="modal-close" onclick="closeModal()">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
             <div class="modal-body" id="modalBody">
-                <div style="text-align: center; padding: 2rem;">
-                    <i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: var(--primary);"></i>
+                <div class="modal-loading">
+                    <div class="spinner"></div>
+                    <p>Memuat detail...</p>
                 </div>
             </div>
         </div>
     </div>
 
-    <script>
-        function showDetail(id) {
-            const modal = document.getElementById('detailModal');
-            modal.classList.add('show');
-            
-            fetch(`get_detail.php?id=${id}`)
-                .then(res => res.json())
-                .then(data => {
-                    document.getElementById('modalBody').innerHTML = `
-                        <div class="detail-section">
-                            <div class="detail-label">Judul Investasi</div>
-                            <div class="detail-value">${data.judul_investasi}</div>
-                        </div>
-                        
-                        <div class="detail-section">
-                            <div class="detail-label">Kategori</div>
-                            <div class="detail-value">${data.nama_kategori}</div>
-                        </div>
-                        
-                        <div class="detail-section">
-                            <div class="detail-label">Jumlah Investasi</div>
-                            <div class="detail-value">Rp ${new Intl.NumberFormat('id-ID').format(data.jumlah)}</div>
-                        </div>
-                        
-                        <div class="detail-section">
-                            <div class="detail-label">Tanggal Investasi</div>
-                            <div class="detail-value">${new Date(data.tanggal_investasi).toLocaleDateString('id-ID')}</div>
-                        </div>
-                        
-                        ${data.deskripsi ? `
-                        <div class="detail-section">
-                            <div class="detail-label">Deskripsi</div>
-                            <div class="detail-value">${data.deskripsi.replace(/\n/g, '<br>')}</div>
-                        </div>
-                        ` : ''}
-                        
-                        ${data.bukti_file ? `
-                        <div class="detail-section">
-                            <div class="detail-label">Bukti Investasi</div>
-                            <img src="bukti_investasi/${data.bukti_file}" alt="Bukti" class="bukti-image">
-                        </div>
-                        ` : '<p style="text-align: center; color: #94a3b8;">Tidak ada bukti yang diupload</p>'}
-                    `;
-                })
-                .catch(err => {
-                    document.getElementById('modalBody').innerHTML = `
-                        <p style="text-align: center; color: var(--danger);">Gagal memuat data</p>
-                    `;
-                });
-        }
-        
-        function closeDetail() {
-            document.getElementById('detailModal').classList.remove('show');
-        }
-        
-        // Close modal saat klik di luar
-        document.getElementById('detailModal').addEventListener('click', function(e) {
-            if (e.target === this) closeDetail();
+    <!-- Scripts -->
+    <script src="assets/js/landing.js"></script>
+   <script>
+    // ---------- Loading Screen ----------
+    window.addEventListener('load', function () {
+        const loadingScreen = document.getElementById('loadingScreen');
+        const progressBar = document.getElementById('loadingProgress');
+
+        let progress = 0;
+        const interval = setInterval(() => {
+            progress += 10;
+            progressBar.style.width = progress + '%';
+
+            if (progress >= 100) {
+                clearInterval(interval);
+                setTimeout(() => {
+                    loadingScreen.classList.add('fade-out');
+                    setTimeout(() => {
+                        loadingScreen.style.display = 'none';
+                    }, 500);
+                }, 300);
+            }
+        }, 50);
+    });
+
+    // ---------- View Toggle ----------
+    document.querySelectorAll('.toggle-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+
+            const view = this.dataset.view;
+            const grid = document.getElementById('investmentsGrid');
+
+            if (view === 'list') {
+                grid.classList.add('list-view');
+                grid.classList.remove('grid-view');
+            } else {
+                grid.classList.add('grid-view');
+                grid.classList.remove('list-view');
+            }
         });
-    </script>
+    });
+
+    // ---------- Filter & Sort ----------
+    document.getElementById('searchInput').addEventListener('input', filterInvestments);
+    document.getElementById('categoryFilter').addEventListener('change', filterInvestments);
+    document.getElementById('sortSelect').addEventListener('change', e => sortInvestments(e.target.value));
+
+    function filterInvestments() {
+        const keyword = document.getElementById('searchInput').value.toLowerCase();
+        const category = document.getElementById('categoryFilter').value;
+        const cards = document.querySelectorAll('.investment-card');
+
+        cards.forEach(card => {
+            const title = card.dataset.title.toLowerCase();
+            const cardCategory = card.dataset.category;
+            const matchSearch = title.includes(keyword);
+            const matchCategory = category === 'all' || cardCategory === category;
+
+            card.style.display = matchSearch && matchCategory ? 'block' : 'none';
+        });
+    }
+
+    function sortInvestments(sortBy) {
+        const grid = document.getElementById('investmentsGrid');
+        const cards = Array.from(grid.querySelectorAll('.investment-card'));
+
+        cards.sort((a, b) => {
+            switch (sortBy) {
+                case 'date-desc': return new Date(b.dataset.date) - new Date(a.dataset.date);
+                case 'date-asc': return new Date(a.dataset.date) - new Date(b.dataset.date);
+                case 'amount-desc': return parseFloat(b.dataset.amount) - parseFloat(a.dataset.amount);
+                case 'amount-asc': return parseFloat(a.dataset.amount) - parseFloat(b.dataset.amount);
+                case 'roi-desc': return parseFloat(b.dataset.roi) - parseFloat(a.dataset.roi);
+                case 'roi-asc': return parseFloat(a.dataset.roi) - parseFloat(b.dataset.roi);
+                default: return 0;
+            }
+        });
+
+        cards.forEach(card => grid.appendChild(card));
+    }
+
+    // ---------- Scroll to Top ----------
+    const scrollBtn = document.getElementById('scrollToTop');
+    window.addEventListener('scroll', () => {
+        scrollBtn.classList.toggle('show', window.pageYOffset > 300);
+    });
+    scrollBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+    // ---------- Modal ----------
+    function showInvestmentDetail(id) {
+        const modal = document.getElementById('investmentModal');
+        const modalBody = document.getElementById('modalBody');
+        modal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+
+        fetch(`get_investment_detail.php?id=${id}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    displayInvestmentDetail(data.investment);
+                } else {
+                    modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>${data.message}</p></div>`;
+                }
+            })
+            .catch(() => {
+                modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>Terjadi kesalahan saat memuat data</p></div>`;
+            });
+    }
+
+    function closeModal() {
+        const modal = document.getElementById('investmentModal');
+        modal.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', e => e.key === 'Escape' && closeModal());
+
+    // ---------- Render Detail ----------
+    function displayInvestmentDetail(inv) {
+        const modalBody = document.getElementById('modalBody');
+
+        const buktiBlock = (data) => {
+            if (!data) return `<div class="detail-no-image"><i class="fas fa-image"></i><p>Tidak ada bukti</p></div>`;
+            const { preview_url, is_image, is_pdf, original_name, size_formatted } = data;
+            if (is_image) return `<div class="detail-image"><img src="${preview_url}" alt="Bukti" loading="lazy"><p class="file-meta">${original_name} • ${size_formatted}</p></div>`;
+            if (is_pdf) return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-file-pdf"></i> Lihat PDF – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
+            return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-paperclip"></i> Unduh Lampiran – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
+        };
+
+        const investProof = buktiBlock(inv.bukti_data);
+
+        const profitRows = inv.keuntungan.map(k => `
+            <div class="detail-transaction profit">
+                <div class="transaction-info">
+                    <strong>${k.judul_keuntungan}</strong>
+                    <span>${k.tanggal_keuntungan_formatted}</span>
+                </div>
+                <div class="transaction-amount positive">+${k.jumlah_keuntungan_formatted}</div>
+                ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
+            </div>`).join('');
+
+        const lossRows = inv.kerugian.map(k => `
+            <div class="detail-transaction loss">
+                <div class="transaction-info">
+                    <strong>${k.judul_kerugian}</strong>
+                    <span>${k.tanggal_kerugian_formatted}</span>
+                </div>
+                <div class="transaction-amount negative">-${k.jumlah_kerugian_formatted}</div>
+                ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
+            </div>`).join('');
+
+        modalBody.innerHTML = `
+            <div class="detail-container">
+                ${investProof}
+                <div class="detail-info">
+                    <div class="detail-section">
+                        <h4><i class="fas fa-info-circle"></i> Informasi Dasar</h4>
+                        <div class="detail-grid">
+                            <div class="detail-item"><span class="detail-label">Judul</span><span class="detail-value">${inv.judul_investasi}</span></div>
+                            <div class="detail-item"><span class="detail-label">Kategori</span><span class="detail-value">${inv.nama_kategori}</span></div>
+                            <div class="detail-item"><span class="detail-label">Tanggal</span><span class="detail-value">${inv.tanggal_investasi_formatted}</span></div>
+                        </div>
+                    </div>
+
+                    <div class="detail-section">
+                        <h4><i class="fas fa-wallet"></i> Informasi Keuangan</h4>
+                        <div class="detail-grid">
+                            <div class="detail-item"><span class="detail-label">Modal</span><span class="detail-value">${inv.modal_investasi_formatted}</span></div>
+                            <div class="detail-item"><span class="detail-label">Nilai Sekarang</span><span class="detail-value">${inv.nilai_sekarang_formatted}</span></div>
+                            <div class="detail-item"><span class="detail-label">Total Keuntungan</span><span class="detail-value positive">+${inv.total_keuntungan_formatted}</span></div>
+                            <div class="detail-item"><span class="detail-label">Total Kerugian</span><span class="detail-value negative">-${inv.total_kerugian_formatted}</span></div>
+                            <div class="detail-item"><span class="detail-label">ROI</span><span class="detail-value ${inv.roi_persen >= 0 ? 'positive' : 'negative'}">${inv.roi_persen}%</span></div>
+                        </div>
+                    </div>
+
+                    ${inv.deskripsi ? `<div class="detail-section"><h4><i class="fas fa-align-left"></i> Deskripsi</h4><p class="detail-description">${inv.deskripsi}</p></div>` : ''}
+
+                    ${inv.keuntungan.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-up"></i> Riwayat Keuntungan (${inv.keuntungan.length})</h4><div class="detail-transactions">${profitRows}</div></div>` : ''}
+
+                    ${inv.kerugian.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-down"></i> Riwayat Kerugian (${inv.kerugian.length})</h4><div class="detail-transactions">${lossRows}</div></div>` : ''}
+                </div>
+            </div>`;
+    }
+
+    // ---------- AOS (Animate on Scroll) ----------
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) entry.target.classList.add('aos-animate');
+        });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+    document.querySelectorAll('[data-aos]').forEach(el => observer.observe(el));
+
+    // ---------- Counter Animation ----------
+    function animateCounter(el) {
+        const target = parseFloat(el.dataset.value);
+        const duration = 2000;
+        const increment = target / (duration / 16);
+        let current = 0;
+
+        const timer = setInterval(() => {
+            current += increment;
+            if (current >= target) {
+                current = target;
+                clearInterval(timer);
+            }
+            el.textContent = new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 2
+            }).format(current);
+        }, 16);
+    }
+
+    const counterObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && !entry.target.classList.contains('counted')) {
+                entry.target.classList.add('counted');
+                animateCounter(entry.target);
+            }
+        });
+    }, { threshold: 0.5 });
+
+    document.querySelectorAll('.stat-value[data-value]').forEach(el => counterObserver.observe(el));
+</script>
 </body>
 </html>

@@ -1,0 +1,524 @@
+/* =========================================================
+   SAZEN – Edit Investment Form
+   Responsive Professional CSS v3.0
+   ========================================================= */
+
+:root{
+    /* ---------- Colors ---------- */
+    --primary      : #6366f1;
+    --primary-dark : #4f46e5;
+    --secondary    : #64748b;
+    --success      : #10b981;
+    --danger       : #ef4444;
+    --warning      : #f59e0b;
+    --dark         : #1e293b;
+    --light        : #f8fafc;
+    --white        : #ffffff;
+
+    /* ---------- Gradients ---------- */
+    --grad-primary : linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    --grad-dark    : linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+
+    /* ---------- Shadows ---------- */
+    --shadow-sm    : 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md    : 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg    : 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-xl    : 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+    /* ---------- Radius ---------- */
+    --radius       : .75rem;
+    --radius-full  : 9999px;
+
+    /* ---------- Transitions ---------- */
+    --transition   : .3s ease-in-out;
+}
+
+/* ---------------------------------------------------------
+   Global resets
+   --------------------------------------------------------- */
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+}
+
+body{
+    background:var(--light);
+    color:var(--dark);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+}
+
+/* ---------------------------------------------------------
+   Layout wrapper
+   --------------------------------------------------------- */
+.form-wrapper{
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:2rem 1rem;
+    background:var(--grad-dark);
+}
+
+/* ---------------------------------------------------------
+   Header
+   --------------------------------------------------------- */
+.form-header{
+    width:100%;
+    max-width:48rem;
+    margin-bottom:1.5rem;
+}
+
+.back-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:.5rem;
+    padding:.5rem 1rem;
+    background:var(--white);
+    color:var(--primary);
+    border-radius:var(--radius);
+    text-decoration:none;
+    font-weight:500;
+    box-shadow:var(--shadow-sm);
+    transition:var(--transition);
+}
+
+.back-btn:hover{
+    transform:translateX(-4px);
+    box-shadow:var(--shadow-md);
+}
+
+/* ---------------------------------------------------------
+   Form container
+   --------------------------------------------------------- */
+.form-container{
+    width:100%;
+    max-width:48rem;
+    background:var(--white);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow-xl);
+    overflow:hidden;
+}
+
+/* Title section */
+.form-title-section{
+    display:flex;
+    align-items:center;
+    gap:1rem;
+    padding:2rem;
+    background:var(--grad-primary);
+    color:var(--white);
+}
+
+.title-icon{
+    width:3rem;
+    height:3rem;
+    display:grid;
+    place-items:center;
+    background:rgb(255 255 255 / .15);
+    border-radius:var(--radius);
+    font-size:1.25rem;
+}
+
+.title-content h1{
+    font-size:1.5rem;
+    font-weight:700;
+}
+
+.title-content p{
+    opacity:.9;
+    font-size:.875rem;
+}
+
+/* ---------------------------------------------------------
+   Info card
+   --------------------------------------------------------- */
+.info-card{
+    margin:1.5rem 2rem;
+    border:1px solid #e2e8f0;
+    border-radius:var(--radius);
+    overflow:hidden;
+}
+
+.info-header{
+    display:flex;
+    align-items:center;
+    gap:.5rem;
+    padding:.75rem 1rem;
+    background:#f1f5f9;
+    font-weight:600;
+    font-size:.875rem;
+    color:var(--secondary);
+}
+
+.info-content{
+    padding:1rem;
+    display:grid;
+    gap:.75rem;
+}
+
+.info-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:.5rem;
+}
+
+.info-label{
+    font-weight:500;
+    font-size:.875rem;
+    color:var(--secondary);
+}
+
+.info-value{
+    font-weight:600;
+    color:var(--dark);
+}
+
+.file-link{
+    color:var(--primary);
+    text-decoration:none;
+    display:inline-flex;
+    align-items:center;
+    gap:.25rem;
+    transition:var(--transition);
+}
+
+.file-link:hover{
+    text-decoration:underline;
+}
+
+/* ---------------------------------------------------------
+   Messages
+   --------------------------------------------------------- */
+.message{
+    margin:1.5rem 2rem;
+    padding:1rem 1.25rem;
+    border-radius:var(--radius);
+    display:flex;
+    align-items:center;
+    gap:.75rem;
+    font-size:.875rem;
+    animation:slideIn .3s ease;
+}
+
+.error-message{
+    background:#fee2e2;
+    color:var(--danger);
+}
+
+.success-message{
+    background:#d1fae5;
+    color:var(--success);
+}
+
+@keyframes slideIn{
+    from{transform:translateY(-10px);opacity:0;}
+    to{transform:translateY(0);opacity:1;}
+}
+
+@keyframes slideOut{
+    to{transform:translateY(-10px);opacity:0;}
+}
+
+/* ---------------------------------------------------------
+   Form elements
+   --------------------------------------------------------- */
+.investment-form{
+    padding:0 2rem 2rem;
+    display:grid;
+    gap:1.25rem;
+}
+
+.form-group{
+    display:flex;
+    flex-direction:column;
+    gap:.5rem;
+}
+
+.form-row{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:1.25rem;
+}
+
+label{
+    font-weight:500;
+    font-size:.875rem;
+    display:flex;
+    align-items:center;
+    gap:.5rem;
+}
+
+.required{
+    color:var(--danger);
+}
+
+.form-input,
+.form-select,
+.form-textarea{
+    width:100%;
+    padding:.75rem 1rem;
+    border:1px solid #cbd5e1;
+    border-radius:var(--radius);
+    font-size:.875rem;
+    transition:var(--transition);
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus{
+    outline:none;
+    border-color:var(--primary);
+    box-shadow:0 0 0 3px rgb(99 102 241 / .15);
+}
+
+.input-group{
+    display:flex;
+    align-items:center;
+}
+
+.input-prefix{
+    padding:.75rem 1rem;
+    background:#f1f5f9;
+    border:1px solid #cbd5e1;
+    border-right:0;
+    border-radius:var(--radius) 0 0 var(--radius);
+    font-weight:500;
+    color:var(--secondary);
+}
+
+.input-group .form-input{
+    border-left:0;
+    border-radius:0 var(--radius) var(--radius) 0;
+}
+
+.form-hint{
+    font-size:.75rem;
+    color:var(--secondary);
+    display:flex;
+    align-items:center;
+    gap:.25rem;
+}
+
+/* ---------------------------------------------------------
+   File upload
+   --------------------------------------------------------- */
+.current-file{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:.75rem 1rem;
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:var(--radius);
+    margin-bottom:.75rem;
+}
+
+.file-info{
+    display:flex;
+    align-items:center;
+    gap:.5rem;
+    font-size:.875rem;
+}
+
+.btn-preview{
+    padding:.25rem .75rem;
+    background:var(--primary);
+    color:var(--white);
+    border-radius:var(--radius);
+    text-decoration:none;
+    font-size:.75rem;
+    transition:var(--transition);
+}
+
+.btn-preview:hover{
+    background:var(--primary-dark);
+}
+
+.file-upload-wrapper{
+    position:relative;
+}
+
+.file-input{
+    position:absolute;
+    inset:0;
+    opacity:0;
+    cursor:pointer;
+}
+
+.file-label{
+    display:flex;
+    align-items:center;
+    gap:.75rem;
+    padding:.75rem 1rem;
+    border:2px dashed #cbd5e1;
+    border-radius:var(--radius);
+    cursor:pointer;
+    transition:var(--transition);
+}
+
+.file-label:hover{
+    border-color:var(--primary);
+    background:#f8fafc;
+}
+
+.file-preview{
+    margin-top:.75rem;
+}
+
+.preview-item{
+    display:flex;
+    align-items:center;
+    gap:.75rem;
+    padding:.75rem;
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:var(--radius);
+}
+
+.preview-item img{
+    width:3rem;
+    height:3rem;
+    object-fit:cover;
+    border-radius:var(--radius);
+}
+
+.preview-info{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    font-size:.875rem;
+}
+
+.preview-name{
+    font-weight:500;
+}
+
+.preview-size{
+    font-size:.75rem;
+    color:var(--secondary);
+}
+
+.btn-remove{
+    background:var(--danger);
+    color:var(--white);
+    border:none;
+    width:1.75rem;
+    height:1.75rem;
+    border-radius:50%;
+    cursor:pointer;
+    display:grid;
+    place-items:center;
+    transition:var(--transition);
+}
+
+.btn-remove:hover{
+    background:#dc2626;
+}
+
+/* ---------------------------------------------------------
+   Buttons
+   --------------------------------------------------------- */
+.form-actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:1rem;
+    margin-top:1.5rem;
+}
+
+.btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:.5rem;
+    padding:.75rem 1.5rem;
+    font-weight:500;
+    font-size:.875rem;
+    border-radius:var(--radius);
+    border:none;
+    cursor:pointer;
+    text-decoration:none;
+    transition:var(--transition);
+}
+
+.btn-primary{
+    background:var(--grad-primary);
+    color:var(--white);
+    box-shadow:var(--shadow-md);
+}
+
+.btn-primary:hover{
+    box-shadow:var(--shadow-lg);
+    transform:translateY(-2px);
+}
+
+.btn-secondary{
+    background:var(--white);
+    color:var(--secondary);
+    border:1px solid #e2e8f0;
+}
+
+.btn-secondary:hover{
+    background:#f8fafc;
+}
+
+.btn-warning{
+    background:var(--warning);
+    color:var(--white);
+}
+
+.btn-warning:hover{
+    background:#f59e0b;
+}
+
+/* ---------------------------------------------------------
+   Responsive
+   --------------------------------------------------------- */
+@media (max-width:768px){
+    .form-wrapper{
+        padding:1rem;
+    }
+
+    .form-title-section{
+        padding:1.5rem;
+    }
+
+    .title-content h1{
+        font-size:1.25rem;
+    }
+
+    .info-card,
+    .message,
+    .investment-form{
+        margin-left:1rem;
+        margin-right:1rem;
+    }
+
+    .form-row{
+        grid-template-columns:1fr;
+    }
+
+    .form-actions{
+        flex-direction:column;
+    }
+
+    .btn{
+        width:100%;
+    }
+}
+
+@media (max-width:480px){
+    .form-title-section{
+        flex-direction:column;
+        text-align:center;
+    }
+
+    .info-item{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+}

@@ -1,0 +1,137 @@
+[20-Oct-2025 01:11:56 Asia/Jakarta] PHP Fatal error:  Uncaught Error: Call to undefined function log_security_event() in C:\xampp\htdocs\portofolio_investasi_pribadi\admin\upload.php:83
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\portofolio_investasi_pribadi\admin\upload.php on line 83
+[2025-10-20 10:13:58] PDO connection failed: SQLSTATE[HY000] [2002] php_network_getaddresses: getaddrinfo for db.fr-pari1.bengt.wasmernet.com failed: No such host is known.  (DSN: mysql:host=db.fr-pari1.bengt.wasmernet.com;port=10272;dbname=dbP2q6UBWSHN9Rj63Z9Vk5DV;charset=utf8mb4)
+[2025-10-20 10:14:07] PDO connection failed: SQLSTATE[HY000] [2002] php_network_getaddresses: getaddrinfo for db.fr-pari1.bengt.wasmernet.com failed: No such host is known.  (DSN: mysql:host=db.fr-pari1.bengt.wasmernet.com;port=10272;dbname=dbP2q6UBWSHN9Rj63Z9Vk5DV;charset=utf8mb4)
+[2025-10-20 10:14:22] PDO connection failed: SQLSTATE[HY000] [2002] php_network_getaddresses: getaddrinfo for db.fr-pari1.bengt.wasmernet.com failed: No such host is known.  (DSN: mysql:host=db.fr-pari1.bengt.wasmernet.com;port=10272;dbname=dbP2q6UBWSHN9Rj63Z9Vk5DV;charset=utf8mb4)
+[2025-10-20 10:14:48] PDO connection failed: SQLSTATE[HY000] [2002] A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond (DSN: mysql:host=db.fr-pari1.bengt.wasmernet.com;port=10272;dbname=dbP2q6UBWSHN9Rj63Z9Vk5DV;charset=utf8mb4)
+[2025-10-20 10:15:20] PDO connection failed: SQLSTATE[HY000] [2002] A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond (DSN: mysql:host=db.fr-pari1.bengt.wasmernet.com;port=10272;dbname=dbP2q6UBWSHN9Rj63Z9Vk5DV;charset=utf8mb4)
+[20-Oct-2025 10:24:41 Asia/Jakarta] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1615 Prepared statement needs to be re-prepared in C:\xampp\htdocs\portofolio_investasi_pribadi\index.php:6
+Stack trace:
+#0 C:\xampp\htdocs\portofolio_investasi_pribadi\index.php(6): PDO->query('SELECT * FROM v...')
+#1 {main}
+  thrown in C:\xampp\htdocs\portofolio_investasi_pribadi\index.php on line 6
+[20-Oct-2025 10:24:51 Asia/Jakarta] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1615 Prepared statement needs to be re-prepared in C:\xampp\htdocs\portofolio_investasi_pribadi\index.php:6
+Stack trace:
+#0 C:\xampp\htdocs\portofolio_investasi_pribadi\index.php(6): PDO->query('SELECT * FROM v...')
+#1 {main}
+  thrown in C:\xampp\htdocs\portofolio_investasi_pribadi\index.php on line 6
+[20-Oct-2025 10:25:39 Asia/Jakarta] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1615 Prepared statement needs to be re-prepared in C:\xampp\htdocs\portofolio_investasi_pribadi\index.php:6
+Stack trace:
+#0 C:\xampp\htdocs\portofolio_investasi_pribadi\index.php(6): PDO->query('SELECT * FROM v...')
+#1 {main}
+  thrown in C:\xampp\htdocs\portofolio_investasi_pribadi\index.php on line 6
+[20-Oct-2025 10:27:24 Asia/Jakarta] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1615 Prepared statement needs to be re-prepared in C:\xampp\htdocs\portofolio_investasi_pribadi\index.php:6
+Stack trace:
+#0 C:\xampp\htdocs\portofolio_investasi_pribadi\index.php(6): PDO->query('SELECT * FROM v...')
+#1 {main}
+  thrown in C:\xampp\htdocs\portofolio_investasi_pribadi\index.php on line 6
+[20-Oct-2025 10:27:36 Asia/Jakarta] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY000]: General error: 1615 Prepared statement needs to be re-prepared in C:\xampp\htdocs\portofolio_investasi_pribadi\index.php:6
+Stack trace:
+#0 C:\xampp\htdocs\portofolio_investasi_pribadi\index.php(6): PDO->query('SELECT * FROM v...')
+#1 {main}
+  thrown in C:\xampp\htdocs\portofolio_investasi_pribadi\index.php on line 6
+[20-Oct-2025 11:57:43 Asia/Jakarta] === EDIT INVESTASI START ===
+[20-Oct-2025 11:57:43 Asia/Jakarta] Investment ID: 1
+[20-Oct-2025 11:57:43 Asia/Jakarta] Old bukti_file: 1760919459_80e4600c8218cae5
+[20-Oct-2025 11:57:43 Asia/Jakarta] POST keys: update, judul_investasi, kategori_id, jumlah, tanggal_investasi, deskripsi
+[20-Oct-2025 11:57:43 Asia/Jakarta] FILES keys: bukti
+[20-Oct-2025 11:57:43 Asia/Jakarta] bukti file array: Array
+(
+    [name] => WhatsApp Image 2025-07-25 at 12.46.33.jpeg
+    [full_path] => WhatsApp Image 2025-07-25 at 12.46.33.jpeg
+    [type] => image/jpeg
+    [tmp_name] => C:\xampp\tmp\php836C.tmp
+    [error] => 0
+    [size] => 88341
+)
+
+[20-Oct-2025 11:57:43 Asia/Jakarta] FILE upload info:
+[20-Oct-2025 11:57:43 Asia/Jakarta] - isset: YES
+[20-Oct-2025 11:57:43 Asia/Jakarta] - error code: 0
+[20-Oct-2025 11:57:43 Asia/Jakarta] - file name: WhatsApp Image 2025-07-25 at 12.46.33.jpeg
+[20-Oct-2025 11:57:43 Asia/Jakarta] - file size: 88341
+[20-Oct-2025 11:57:43 Asia/Jakarta] Processing file upload...
+[20-Oct-2025 11:57:43 Asia/Jakarta] File uploaded successfully with ID: 1760936263_6d557dff3bcb1df3
+[20-Oct-2025 11:57:43 Asia/Jakarta] Deleting old file ID: 1760919459_80e4600c8218cae5
+[20-Oct-2025 11:57:43 Asia/Jakarta] Delete result: SUCCESS
+[20-Oct-2025 11:57:43 Asia/Jakarta] Changed: bukti file
+[20-Oct-2025 11:57:43 Asia/Jakarta] Total changes: 1
+[20-Oct-2025 11:57:43 Asia/Jakarta] Changes list: bukti
+[20-Oct-2025 11:57:43 Asia/Jakarta] File ID to save: 1760936263_6d557dff3bcb1df3
+[20-Oct-2025 11:57:43 Asia/Jakarta] Executing UPDATE query...
+[20-Oct-2025 11:57:43 Asia/Jakarta] Parameters: {"judul":"beli saham cdia","deskripsi":"aeaf","jumlah":4000,"tanggal":"2025-10-20","kategori_id":4,"bukti_file":"1760936263_6d557dff3bcb1df3","id":1}
+[20-Oct-2025 11:57:43 Asia/Jakarta] UPDATE successful!
+[20-Oct-2025 11:57:43 Asia/Jakarta] Success message: ✅ Data investasi berhasil diperbarui! | Perubahan: bukti | 📎 Bukti baru: WhatsApp Image 2025-07-25 at 12.46.33.jpeg
+[20-Oct-2025 11:57:43 Asia/Jakarta] === EDIT INVESTASI END ===
+[20-Oct-2025 11:57:43 Asia/Jakarta] PHP Fatal error:  Uncaught Error: Call to undefined function log_security_event() in C:\xampp\htdocs\portofolio_investasi_pribadi\admin\edit.php:256
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\portofolio_investasi_pribadi\admin\edit.php on line 256
+[20-Oct-2025 11:58:28 Asia/Jakarta] === EDIT INVESTASI START ===
+[20-Oct-2025 11:58:28 Asia/Jakarta] Investment ID: 1
+[20-Oct-2025 11:58:28 Asia/Jakarta] Old bukti_file: 1760936263_6d557dff3bcb1df3
+[20-Oct-2025 11:58:28 Asia/Jakarta] POST keys: update, judul_investasi, kategori_id, jumlah, tanggal_investasi, deskripsi
+[20-Oct-2025 11:58:28 Asia/Jakarta] FILES keys: bukti
+[20-Oct-2025 11:58:28 Asia/Jakarta] bukti file array: Array
+(
+    [name] => WhatsApp Image 2025-07-08 at 14.11.23.jpeg
+    [full_path] => WhatsApp Image 2025-07-08 at 14.11.23.jpeg
+    [type] => image/jpeg
+    [tmp_name] => C:\xampp\tmp\php2E35.tmp
+    [error] => 0
+    [size] => 41586
+)
+
+[20-Oct-2025 11:58:28 Asia/Jakarta] FILE upload info:
+[20-Oct-2025 11:58:28 Asia/Jakarta] - isset: YES
+[20-Oct-2025 11:58:28 Asia/Jakarta] - error code: 0
+[20-Oct-2025 11:58:28 Asia/Jakarta] - file name: WhatsApp Image 2025-07-08 at 14.11.23.jpeg
+[20-Oct-2025 11:58:28 Asia/Jakarta] - file size: 41586
+[20-Oct-2025 11:58:28 Asia/Jakarta] Processing file upload...
+[20-Oct-2025 11:58:28 Asia/Jakarta] File uploaded successfully with ID: 1760936308_b80be26eaa26da8a
+[20-Oct-2025 11:58:28 Asia/Jakarta] Deleting old file ID: 1760936263_6d557dff3bcb1df3
+[20-Oct-2025 11:58:28 Asia/Jakarta] Delete result: SUCCESS
+[20-Oct-2025 11:58:28 Asia/Jakarta] Changed: bukti file
+[20-Oct-2025 11:58:28 Asia/Jakarta] Total changes: 1
+[20-Oct-2025 11:58:28 Asia/Jakarta] Changes list: bukti
+[20-Oct-2025 11:58:28 Asia/Jakarta] File ID to save: 1760936308_b80be26eaa26da8a
+[20-Oct-2025 11:58:28 Asia/Jakarta] Executing UPDATE query...
+[20-Oct-2025 11:58:28 Asia/Jakarta] Parameters: {"judul":"beli saham cdia","deskripsi":"aeaf","jumlah":4000,"tanggal":"2025-10-20","kategori_id":4,"bukti_file":"1760936308_b80be26eaa26da8a","id":1}
+[20-Oct-2025 11:58:28 Asia/Jakarta] UPDATE successful!
+[20-Oct-2025 11:58:28 Asia/Jakarta] Success message: ✅ Data investasi berhasil diperbarui! | Perubahan: bukti | 📎 Bukti baru: WhatsApp Image 2025-07-08 at 14.11.23.jpeg
+[20-Oct-2025 11:58:28 Asia/Jakarta] === EDIT INVESTASI END ===
+[20-Oct-2025 12:00:06 Asia/Jakarta] === EDIT INVESTASI START ===
+[20-Oct-2025 12:00:06 Asia/Jakarta] Investment ID: 1
+[20-Oct-2025 12:00:06 Asia/Jakarta] Old bukti_file: 1760936308_b80be26eaa26da8a
+[20-Oct-2025 12:00:06 Asia/Jakarta] POST keys: update, judul_investasi, kategori_id, jumlah, tanggal_investasi, deskripsi
+[20-Oct-2025 12:00:06 Asia/Jakarta] FILES keys: bukti
+[20-Oct-2025 12:00:06 Asia/Jakarta] bukti file array: Array
+(
+    [name] => idcamp-x-dicoding-live-1-user-integrator-or-creator-your-place-in-the-ai-ecosystem-certificate.pdf
+    [full_path] => idcamp-x-dicoding-live-1-user-integrator-or-creator-your-place-in-the-ai-ecosystem-certificate.pdf
+    [type] => application/pdf
+    [tmp_name] => C:\xampp\tmp\phpA92E.tmp
+    [error] => 0
+    [size] => 157180
+)
+
+[20-Oct-2025 12:00:06 Asia/Jakarta] FILE upload info:
+[20-Oct-2025 12:00:06 Asia/Jakarta] - isset: YES
+[20-Oct-2025 12:00:06 Asia/Jakarta] - error code: 0
+[20-Oct-2025 12:00:06 Asia/Jakarta] - file name: idcamp-x-dicoding-live-1-user-integrator-or-creator-your-place-in-the-ai-ecosystem-certificate.pdf
+[20-Oct-2025 12:00:06 Asia/Jakarta] - file size: 157180
+[20-Oct-2025 12:00:06 Asia/Jakarta] Processing file upload...
+[20-Oct-2025 12:00:06 Asia/Jakarta] File uploaded successfully with ID: 1760936406_c82b6f49c4df8730
+[20-Oct-2025 12:00:06 Asia/Jakarta] Deleting old file ID: 1760936308_b80be26eaa26da8a
+[20-Oct-2025 12:00:06 Asia/Jakarta] Delete result: SUCCESS
+[20-Oct-2025 12:00:06 Asia/Jakarta] Changed: bukti file
+[20-Oct-2025 12:00:06 Asia/Jakarta] Total changes: 1
+[20-Oct-2025 12:00:06 Asia/Jakarta] Changes list: bukti
+[20-Oct-2025 12:00:06 Asia/Jakarta] File ID to save: 1760936406_c82b6f49c4df8730
+[20-Oct-2025 12:00:07 Asia/Jakarta] Executing UPDATE query...
+[20-Oct-2025 12:00:07 Asia/Jakarta] Parameters: {"judul":"beli saham cdia","deskripsi":"aeaf","jumlah":4000,"tanggal":"2025-10-20","kategori_id":4,"bukti_file":"1760936406_c82b6f49c4df8730","id":1}
+[20-Oct-2025 12:00:07 Asia/Jakarta] UPDATE successful!
+[20-Oct-2025 12:00:07 Asia/Jakarta] Success message: ✅ Data investasi berhasil diperbarui! | Perubahan: bukti | 📎 Bukti baru: idcamp-x-dicoding-live-1-user-integrator-or-creator-your-place-in-the-ai-ecosystem-certificate.pdf
+[20-Oct-2025 12:00:07 Asia/Jakarta] === EDIT INVESTASI END ===

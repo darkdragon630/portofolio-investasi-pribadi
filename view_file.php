@@ -1,7 +1,7 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * View File from JSON Storage
+ * View File from Database
  */
 
 require_once 'config/koneksi.php';
@@ -13,52 +13,42 @@ if (!isset($_GET['type']) || !isset($_GET['id'])) {
 }
 
 $type = $_GET['type'];
-$file_id = $_GET['id'];
+$record_id = (int)$_GET['id'];
 
-// Determine which JSON file to use
+// Determine which table to query
 switch ($type) {
     case 'investasi':
-        $json_file = JSON_FILE_INVESTASI;
+        $table = 'investasi';
         break;
     case 'keuntungan':
-        $json_file = JSON_FILE_KEUNTUNGAN;
+        $table = 'keuntungan_investasi';
         break;
     case 'kerugian':
-        $json_file = JSON_FILE_KERUGIAN;
+        $table = 'kerugian_investasi';
         break;
     default:
         http_response_code(400);
         die('Invalid file type');
 }
 
-// Get file from JSON
-$file_data = get_file_from_json($file_id, $json_file);
-
-if (!$file_data) {
-    http_response_code(404);
-    die('File tidak ditemukan');
+try {
+    // Get bukti_file from database
+    $sql = "SELECT bukti_file FROM {$table} WHERE id = ?";
+    $stmt = $koneksi->prepare($sql);
+    $stmt->execute([$record_id]);
+    $result = $stmt->fetch();
+    
+    if (!$result || empty($result['bukti_file'])) {
+        http_response_code(404);
+        die('File tidak ditemukan');
+    }
+    
+    // Parse and display file
+    display_file_from_db($result['bukti_file']);
+    
+} catch (Exception $e) {
+    error_log("View file error: " . $e->getMessage());
+    http_response_code(500);
+    die('Terjadi kesalahan saat mengambil file');
 }
-
-// Check if download is requested
-$is_download = isset($_GET['download']) && $_GET['download'] === '1';
-
-// Set appropriate headers
-header('Content-Type: ' . $file_data['mime_type']);
-header('Content-Length: ' . $file_data['size']);
-
-if ($is_download) {
-    // Force download
-    header('Content-Disposition: attachment; filename="' . $file_data['original_name'] . '"');
-} else {
-    // Display inline (preview in browser)
-    header('Content-Disposition: inline; filename="' . $file_data['original_name'] . '"');
-}
-
-// Prevent caching for sensitive files (optional)
-header('Cache-Control: private, max-age=3600');
-header('Pragma: private');
-
-// Output decoded base64 data
-echo base64_decode($file_data['base64_data']);
-exit;
 ?>

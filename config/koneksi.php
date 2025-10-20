@@ -284,4 +284,90 @@ function get_flash_message() {
     }
     return null;
 }
+
+// Upload file dan simpan ke database (return JSON metadata)
+function handle_file_upload_to_db($file) {
+    if (!isset($file) || $file['error'] === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        throw new Exception('Upload error: ' . $file['error']);
+    }
+
+    if ($file['size'] > MAX_FILE_SIZE) {
+        throw new Exception('File terlalu besar. Maksimal ' . (MAX_FILE_SIZE / 1024 / 1024) . ' MB');
+    }
+
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ALLOWED_EXTENSIONS)) {
+        throw new Exception('Format file tidak didukung. Hanya: ' . implode(', ', ALLOWED_EXTENSIONS));
+    }
+
+    // Read file and encode to base64
+    $file_content = file_get_contents($file['tmp_name']);
+    $base64_data = base64_encode($file_content);
+
+    // Create metadata JSON
+    $metadata = json_encode([
+        'original_name' => $file['name'],
+        'extension' => $ext,
+        'size' => $file['size'],
+        'mime_type' => mime_content_type($file['tmp_name']),
+        'uploaded_at' => date('Y-m-d H:i:s')
+    ]);
+
+    // Return combined: metadata|base64data
+    return $metadata . '|||' . $base64_data;
+}
+
+// Parse bukti_file dari database
+function parse_bukti_file($bukti_file) {
+    if (empty($bukti_file)) {
+        return null;
+    }
+
+    // Split metadata dan base64
+    $parts = explode('|||', $bukti_file, 2);
+    
+    if (count($parts) !== 2) {
+        return null; // Invalid format
+    }
+
+    $metadata = json_decode($parts[0], true);
+    $base64_data = $parts[1];
+
+    if (!$metadata) {
+        return null;
+    }
+
+    return [
+        'original_name' => $metadata['original_name'] ?? 'file',
+        'extension' => $metadata['extension'] ?? 'bin',
+        'size' => $metadata['size'] ?? 0,
+        'mime_type' => $metadata['mime_type'] ?? 'application/octet-stream',
+        'uploaded_at' => $metadata['uploaded_at'] ?? date('Y-m-d H:i:s'),
+        'base64_data' => $base64_data
+    ];
+}
+
+// Display file dari database
+function display_file_from_db($bukti_file) {
+    $file_data = parse_bukti_file($bukti_file);
+    
+    if (!$file_data) {
+        http_response_code(404);
+        die('File tidak ditemukan');
+    }
+
+    // Set headers
+    header('Content-Type: ' . $file_data['mime_type']);
+    header('Content-Length: ' . $file_data['size']);
+    header('Content-Disposition: inline; filename="' . $file_data['original_name'] . '"');
+    header('Cache-Control: private, max-age=3600');
+
+    // Output decoded base64
+    echo base64_decode($file_data['base64_data']);
+    exit;
+}
 ?>

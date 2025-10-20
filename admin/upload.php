@@ -1,7 +1,7 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * Upload Investasi - Bukti disimpan ke JSON
+ * Upload Investasi - Bukti disimpan ke DATABASE
  */
 
 session_start();
@@ -55,11 +55,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
             throw new Exception("Kategori wajib dipilih.");
         }
 
-        // Handle file upload to JSON
-        $bukti_file_id = null;
+        // Handle file upload to DATABASE
+        $bukti_file_data = null;
         if (isset($_FILES['bukti']) && $_FILES['bukti']['error'] !== UPLOAD_ERR_NO_FILE) {
             try {
-                $bukti_file_id = handle_file_upload($_FILES['bukti'], JSON_FILE_INVESTASI);
+                $bukti_file_data = handle_file_upload_to_db($_FILES['bukti']);
             } catch (Exception $e) {
                 throw new Exception("Gagal upload bukti: " . $e->getMessage());
             }
@@ -76,11 +76,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
             $jumlah,
             $tanggal,
             $kategori_id,
-            $bukti_file_id
+            $bukti_file_data
         ]);
 
         if ($result) {
-            //log_security_event("INVESTASI_CREATED", "User: {$_SESSION['username']}, Judul: $judul, Jumlah: $jumlah");
             redirect_with_message("../dashboard.php", "success", "✅ Investasi berhasil ditambahkan!");
         } else {
             throw new Exception("Gagal menyimpan data investasi.");
@@ -117,13 +116,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
             <div class="alert alert-error">
                 <i class="fas fa-exclamation-circle"></i>
                 <span><?= htmlspecialchars($error) ?></span>
-            </div>
-        <?php endif; ?>
-
-        <?php if ($success): ?>
-            <div class="alert alert-success">
-                <i class="fas fa-check-circle"></i>
-                <span><?= htmlspecialchars($success) ?></span>
             </div>
         <?php endif; ?>
 
@@ -257,9 +249,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
             </div>
         </form>
     </div>
-
     <script>
-        // File preview
+    // File preview
         function previewFile(input) {
             const preview = document.getElementById('filePreview');
             const file = input.files[0];

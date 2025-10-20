@@ -327,7 +327,6 @@ $sumber_kerugian_stats = $stmt_sumber_kerugian->fetchAll();
 
         <div class="container">
 
-            <!-- Statistics Overview -->
 <!-- Statistics Overview -->
             <section class="stats-overview">
                 <div class="stats-grid">

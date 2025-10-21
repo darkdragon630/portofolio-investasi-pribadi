@@ -137,3 +137,16 @@ Stack trace:
 [20-Oct-2025 12:00:07 Asia/Jakarta] === EDIT INVESTASI END ===
 [20-Oct-2025 22:04:35 Asia/Jakarta] === EDIT INVESTASI START ===
 [20-Oct-2025 22:04:38 Asia/Jakarta] === EDIT INVESTASI SUCCESS ===
+[21-Oct-2025 00:30:12 Asia/Jakarta] PHP Fatal error:  Uncaught Error: Call to undefined function log_security_event() in C:\xampp\htdocs\portofolio_investasi_pribadi\admin\upload_keuntungan.php:98
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\portofolio_investasi_pribadi\admin\upload_keuntungan.php on line 98
+[21-Oct-2025 00:32:49 Asia/Jakarta] PHP Fatal error:  Uncaught Error: Call to undefined function log_security_event() in C:\xampp\htdocs\portofolio_investasi_pribadi\admin\delete_keuntungan.php:50
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\portofolio_investasi_pribadi\admin\delete_keuntungan.php on line 50
+[2025-10-21 00:33:15] PDO connection failed: SQLSTATE[HY000] [2002] A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond (DSN: mysql:host=db.fr-pari1.bengt.wasmernet.com;port=10272;dbname=dbP2q6UBWSHN9Rj63Z9Vk5DV;charset=utf8mb4)
+[21-Oct-2025 00:43:00 Asia/Jakarta] PHP Fatal error:  Uncaught Error: Call to undefined function log_security_event() in C:\xampp\htdocs\portofolio_investasi_pribadi\admin\delete_keuntungan.php:46
+Stack trace:
+#0 {main}
+  thrown in C:\xampp\htdocs\portofolio_investasi_pribadi\admin\delete_keuntungan.php on line 46

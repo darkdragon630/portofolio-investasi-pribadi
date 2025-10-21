@@ -422,7 +422,7 @@ $sumber_kerugian_stats = $stmt_sumber_kerugian->fetchAll();
                     Aksi Cepat
                 </h2>
                 <div class="actions-grid">
-                    <a href="admin/upload.php" class="action-card">
+                    <a href="admin/upload_investasi.php" class="action-card">
                         <div class="action-icon primary">
                             <i class="fas fa-plus"></i>
                         </div>
@@ -475,7 +475,7 @@ $sumber_kerugian_stats = $stmt_sumber_kerugian->fetchAll();
                             <i class="fas fa-chart-pie"></i>
                             Performa per Kategori
                         </h2>
-                        <button class="card-action" title="Refresh">
+                        <button class="refresh-btn" onclick="location.reload()" title="Refresh">
                             <i class="fas fa-sync-alt"></i>
                         </button>
                     </div>
@@ -583,9 +583,6 @@ $sumber_kerugian_stats = $stmt_sumber_kerugian->fetchAll();
                             <i class="fas fa-briefcase"></i>
                             Investasi Terbaru
                         </h2>
-                        <a href="admin/upload.php" class="card-link">
-                            Lihat Semua <i class="fas fa-arrow-right"></i>
-                        </a>
                     </div>
                     <div class="card-body">
                         <?php if (count($investasi_list) > 0): ?>
@@ -626,9 +623,6 @@ $sumber_kerugian_stats = $stmt_sumber_kerugian->fetchAll();
                             <i class="fas fa-arrow-trend-up"></i>
                             Keuntungan Terbaru
                         </h2>
-                        <a href="admin/upload_keuntungan.php" class="card-link">
-                            Lihat Semua <i class="fas fa-arrow-right"></i>
-                        </a>
                     </div>
                     <div class="card-body">
                         <?php if (count($keuntungan_list) > 0): ?>
@@ -669,9 +663,6 @@ $sumber_kerugian_stats = $stmt_sumber_kerugian->fetchAll();
                             <i class="fas fa-arrow-trend-down"></i>
                             Kerugian Terbaru
                         </h2>
-                        <a href="admin/upload_kerugian.php" class="card-link">
-                            Lihat Semua <i class="fas fa-arrow-right"></i>
-                        </a>
                     </div>
                     <div class="card-body">
                         <?php if (count($kerugian_list) > 0): ?>

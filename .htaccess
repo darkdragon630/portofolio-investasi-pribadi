@@ -1,0 +1,323 @@
+# ===================================
+# SAZEN Investment Portfolio Manager v3.0
+# Apache Configuration & Security
+# ===================================
+
+# ===================================
+# BASIC CONFIGURATION
+# ===================================
+
+# Aktifkan mod_rewrite
+RewriteEngine On
+RewriteBase /
+
+# Atur index file default
+DirectoryIndex index.php index.html
+
+# Prevent directory listing
+Options -Indexes
+
+# ===================================
+# HTTPS & WWW REDIRECT
+# ===================================
+
+# Redirect www ke non-www
+RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+RewriteRule ^ https://%1%{REQUEST_URI} [L,R=301]
+
+# Redirect HTTP ke HTTPS (jika SSL aktif)
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# ===================================
+# BLOCK ACCESS TO SENSITIVE FILES
+# ===================================
+
+# Blokir akses ke .htaccess
+<Files .htaccess>
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Lindungi file konfigurasi dan environment
+<FilesMatch "(^\.env|^koneksi\.php|^config\.php|^config\.ini|^db\.php|^database\.php|^settings\.php)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to config folder
+<DirectoryMatch "^.*/config">
+    Order deny,allow
+    Deny from all
+</DirectoryMatch>
+
+# Block access to SQL files
+<FilesMatch "\.(sql|sqlite|db)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to log files
+<FilesMatch "\.(log|txt)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to backup files
+<FilesMatch "\.(bak|backup|old|orig|save|swp|~)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to Git files
+<FilesMatch "^\.git">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to composer files
+<FilesMatch "^(composer\.json|composer\.lock|package\.json|package-lock\.json)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# ===================================
+# SECURITY HEADERS
+# ===================================
+
+<IfModule mod_headers.c>
+    # Prevent clickjacking
+    Header always set X-Frame-Options "SAMEORIGIN"
+    
+    # XSS Protection
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # Prevent MIME type sniffing
+    Header always set X-Content-Type-Options "nosniff"
+    
+    # Referrer Policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    
+    # Content Security Policy
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https:;"
+    
+    # Remove server signature
+    Header unset Server
+    Header unset X-Powered-By
+</IfModule>
+
+# ===================================
+# PHP SECURITY SETTINGS
+# ===================================
+
+<IfModule mod_php7.c>
+    # Hide PHP version
+    php_flag expose_php off
+    
+    # Session security
+    php_value session.cookie_httponly 1
+    php_value session.cookie_secure 1
+    php_value session.use_strict_mode 1
+    
+    # Upload limits
+    php_value upload_max_filesize 5M
+    php_value post_max_size 6M
+    php_value max_execution_time 30
+    php_value max_input_time 30
+    php_value memory_limit 128M
+    
+    # Error reporting (disable in production)
+    php_flag display_errors off
+    php_flag display_startup_errors off
+    php_value error_reporting E_ALL
+    php_flag log_errors on
+</IfModule>
+
+# ===================================
+# PROTECT UPLOADS FOLDER
+# ===================================
+
+# Prevent PHP execution in uploads folder
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_URI} uploads/.*\.php$ [NC]
+    RewriteRule .* - [F,L]
+</IfModule>
+
+<Directory "uploads">
+    <FilesMatch "\.php$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+    # Allow images only
+    <FilesMatch "\.(jpg|jpeg|png|gif|pdf)$">
+        Order allow,deny
+        Allow from all
+    </FilesMatch>
+</Directory>
+
+# ===================================
+# BLOCK MALICIOUS USER AGENTS & BOTS
+# ===================================
+
+<IfModule mod_rewrite.c>
+    RewriteCond %{HTTP_USER_AGENT} ^$ [OR]
+    RewriteCond %{HTTP_USER_AGENT} ^(-|HTTrack|WebCopier|Wget|curl|libwww|python|nikto|scan|sqlmap|fimap|nessus|openvas|Acunetix|Havij) [NC]
+    RewriteRule ^.*$ - [F,L]
+</IfModule>
+
+# ===================================
+# COMPRESSION (GZIP)
+# ===================================
+
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE text/javascript
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE text/xml
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/x-javascript
+    AddOutputFilterByType DEFLATE application/json
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE image/svg+xml
+</IfModule>
+
+# ===================================
+# BROWSER CACHING
+# ===================================
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+    
+    # Images
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType image/x-icon "access plus 1 year"
+    
+    # CSS and JavaScript
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    
+    # Fonts
+    ExpiresByType font/ttf "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    
+    # HTML - no cache
+    ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+
+<IfModule mod_headers.c>
+    # Cache static resources
+    <FilesMatch "\.(jpg|jpeg|png|gif|svg|css|js|ico|woff|woff2|ttf)$">
+        Header set Cache-Control "max-age=31536000, public"
+    </FilesMatch>
+    
+    # Don't cache dynamic content
+    <FilesMatch "\.(html|htm|php)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires 0
+    </FilesMatch>
+</IfModule>
+
+# ===================================
+# PROTECT AGAINST SQL INJECTION
+# ===================================
+
+<IfModule mod_rewrite.c>
+    # Block common SQL injection patterns
+    RewriteCond %{QUERY_STRING} (\<|%3C).*script.*(\>|%3E) [NC,OR]
+    RewriteCond %{QUERY_STRING} GLOBALS(=|\[|\%[0-9A-Z]{0,2}) [OR]
+    RewriteCond %{QUERY_STRING} _REQUEST(=|\[|\%[0-9A-Z]{0,2}) [OR]
+    RewriteCond %{QUERY_STRING} (union|select|insert|drop|delete|update|cast|create|char|convert|alter|declare|exec|script|set|md5|benchmark).*(from|into) [NC,OR]
+    RewriteCond %{QUERY_STRING} (\.\./|\.\.) [OR]
+    RewriteCond %{QUERY_STRING} ftp\: [NC,OR]
+    RewriteCond %{QUERY_STRING} http\: [NC,OR]
+    RewriteCond %{QUERY_STRING} https\: [NC,OR]
+    RewriteCond %{QUERY_STRING} (<|%3C).*iframe.*(\>|%3E) [NC,OR]
+    RewriteCond %{QUERY_STRING} (<|%3C).*object.*(\>|%3E) [NC,OR]
+    RewriteCond %{QUERY_STRING} (<|%3C).*embed.*(\>|%3E) [NC,OR]
+    RewriteCond %{QUERY_STRING} base64_encode.*\(.*\) [NC,OR]
+    RewriteCond %{QUERY_STRING} (\[|\]|<|>|'|"|;|\)|\(|%0A|%0D|%22|%27|%3C|%3E|%00).*(globals|encode|config|localhost|loopback) [NC,OR]
+    RewriteCond %{QUERY_STRING} (cmd|command)(=|%3D)(chdir|mkdir)(.*)(x20) [NC,OR]
+    RewriteCond %{QUERY_STRING} (globals|mosconfig([a-zA-Z_]{1,22})|request)(=|\[) [NC]
+    RewriteRule ^.*$ - [F,L]
+</IfModule>
+
+# ===================================
+# CUSTOM ERROR PAGES (Optional)
+# ===================================
+
+# ErrorDocument 403 /error/403.html
+# ErrorDocument 404 /error/404.html
+# ErrorDocument 500 /error/500.html
+
+# ===================================
+# CLEAN URL REWRITING (Optional)
+# ===================================
+
+# Uncomment jika ingin clean URL
+# RewriteCond %{REQUEST_FILENAME} !-f
+# RewriteCond %{REQUEST_FILENAME} !-d
+# RewriteRule ^(.+)$ index.php?url=$1 [QSA,L]
+
+# Remove trailing slash
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} (.+)/$
+RewriteRule ^ %1 [L,R=301]
+
+# ===================================
+# MIME TYPES
+# ===================================
+
+<IfModule mod_mime.c>
+    AddType application/javascript .js
+    AddType text/css .css
+    AddType image/svg+xml .svg
+    AddType font/woff .woff
+    AddType font/woff2 .woff2
+    AddType application/json .json
+</IfModule>
+
+# ===================================
+# CHARACTER ENCODING
+# ===================================
+
+AddDefaultCharset UTF-8
+
+# ===================================
+# DISABLE SERVER SIGNATURE
+# ===================================
+
+ServerSignature Off
+
+# ===================================
+# RATE LIMITING (Basic Protection)
+# ===================================
+
+<IfModule mod_rewrite.c>
+    # Limit repeated access to login page (basic)
+    RewriteCond %{REQUEST_URI} ^/admin/auth\.php$ [OR]
+    RewriteCond %{REQUEST_URI} ^/pages/auth\.php$
+    RewriteCond %{REMOTE_ADDR} !^127\.0\.0\.1$
+    RewriteRule .* - [E=RATE_LIMIT:1]
+</IfModule>
+
+# ===================================
+# PROTECT SPECIFIC FOLDERS (Optional)
+# ===================================
+
+# Uncomment untuk protect admin folder dengan IP
+# <Directory "/admin">
+#     Order deny,allow
+#     Deny from all
+#     Allow from 127.0.0.1
+#     Allow from YOUR_IP_ADDRESS
+# </Directory>
+
+# ===================================
+# END OF CONFIGURATION
+# ===================================

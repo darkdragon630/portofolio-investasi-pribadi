@@ -19,7 +19,7 @@ $email = $_SESSION['email'];
 
 // Logout handler
 if (isset($_POST['logout'])) {
-    log_security_event("LOGOUT", "User: $username");
+    //log_security_event("LOGOUT", "User: $username");
     session_destroy();
     header("Location: admin/auth.php");
     exit;

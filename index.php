@@ -47,8 +47,7 @@ $sql_keuntungan = "
         ki.tanggal_keuntungan,
         ki.sumber_keuntungan,
         i.judul_investasi,
-        k.nama_kategori,
-        status
+        k.nama_kategori
     FROM keuntungan_investasi ki
     JOIN investasi i ON ki.investasi_id = i.id
     JOIN kategori k ON ki.kategori_id = k.id

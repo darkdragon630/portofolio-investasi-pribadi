@@ -588,6 +588,94 @@ body {
   color: var(--text-muted);
 }
 
+/* Status Badge Styles */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-left: 8px;
+        }
+        
+        .status-badge.realized {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+        }
+        
+        .status-badge.unrealized {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+        }
+        
+        .status-badge i {
+            font-size: 10px;
+        }
+        
+        /* Transaction Item Enhancement */
+        .transaction-item {
+            position: relative;
+        }
+        
+        .transaction-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            border-radius: 0 4px 4px 0;
+            transition: all 0.3s ease;
+        }
+        
+        .transaction-item.realized::before {
+            background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+        }
+        
+        .transaction-item.unrealized::before {
+            background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+        }
+        
+        .transaction-content {
+            flex: 1;
+        }
+        
+        .transaction-header-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        
+        /* Detail Modal Status */
+        .detail-transaction {
+            position: relative;
+            border-left: 4px solid transparent;
+        }
+        
+        .detail-transaction.realized {
+            border-left-color: #10b981;
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.05) 0%, transparent 100%);
+        }
+        
+        .detail-transaction.unrealized {
+            border-left-color: #f59e0b;
+            background: linear-gradient(90deg, rgba(245, 158, 11, 0.05) 0%, transparent 100%);
+        }
+        
+        .transaction-status-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
 /* ========================================
    Transactions Section
 ======================================== */

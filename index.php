@@ -38,7 +38,7 @@ $sql_kategori = "SELECT * FROM kategori ORDER BY nama_kategori";
 $stmt_kategori = $koneksi->query($sql_kategori);
 $kategori_list = $stmt_kategori->fetchAll();
 
-// Ambil keuntungan terbaru (5 teratas)
+// Ambil keuntungan terbaru (5 teratas) - DENGAN STATUS
 $sql_keuntungan = "
     SELECT 
         ki.id,
@@ -46,6 +46,7 @@ $sql_keuntungan = "
         ki.jumlah_keuntungan,
         ki.tanggal_keuntungan,
         ki.sumber_keuntungan,
+        ki.status,
         i.judul_investasi,
         k.nama_kategori
     FROM keuntungan_investasi ki
@@ -57,7 +58,7 @@ $sql_keuntungan = "
 $stmt_keuntungan = $koneksi->query($sql_keuntungan);
 $keuntungan_list = $stmt_keuntungan->fetchAll();
 
-// Ambil kerugian terbaru (5 teratas)
+// Ambil kerugian terbaru (5 teratas) - DENGAN STATUS
 $sql_kerugian = "
     SELECT 
         kr.id,
@@ -65,6 +66,7 @@ $sql_kerugian = "
         kr.jumlah_kerugian,
         kr.tanggal_kerugian,
         kr.sumber_kerugian,
+        kr.status,
         i.judul_investasi,
         k.nama_kategori
     FROM kerugian_investasi kr
@@ -103,6 +105,95 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* Status Badge Styles */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-left: 8px;
+        }
+        
+        .status-badge.realized {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+        }
+        
+        .status-badge.unrealized {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+        }
+        
+        .status-badge i {
+            font-size: 10px;
+        }
+        
+        /* Transaction Item Enhancement */
+        .transaction-item {
+            position: relative;
+        }
+        
+        .transaction-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            border-radius: 0 4px 4px 0;
+            transition: all 0.3s ease;
+        }
+        
+        .transaction-item.realized::before {
+            background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+        }
+        
+        .transaction-item.unrealized::before {
+            background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+        }
+        
+        .transaction-content {
+            flex: 1;
+        }
+        
+        .transaction-header-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        
+        /* Detail Modal Status */
+        .detail-transaction {
+            position: relative;
+            border-left: 4px solid transparent;
+        }
+        
+        .detail-transaction.realized {
+            border-left-color: #10b981;
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.05) 0%, transparent 100%);
+        }
+        
+        .detail-transaction.unrealized {
+            border-left-color: #f59e0b;
+            background: linear-gradient(90deg, rgba(245, 158, 11, 0.05) 0%, transparent 100%);
+        }
+        
+        .transaction-status-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+    </style>
 </head>
 <body>
     
@@ -299,12 +390,22 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                         <div class="transaction-list">
                             <?php if (count($keuntungan_list) > 0): ?>
                                 <?php foreach ($keuntungan_list as $profit): ?>
-                                    <div class="transaction-item profit-item">
+                                    <?php 
+                                    $isRealized = ($profit['status'] === 'realized');
+                                    $statusClass = $isRealized ? 'realized' : 'unrealized';
+                                    ?>
+                                    <div class="transaction-item profit-item <?= $statusClass ?>">
                                         <div class="transaction-icon">
                                             <i class="fas fa-plus-circle"></i>
                                         </div>
                                         <div class="transaction-content">
-                                            <h4><?= htmlspecialchars($profit['judul_keuntungan']) ?></h4>
+                                            <div class="transaction-header-row">
+                                                <h4><?= htmlspecialchars($profit['judul_keuntungan']) ?></h4>
+                                                <span class="status-badge <?= $statusClass ?>">
+                                                    <i class="fas fa-<?= $isRealized ? 'check-circle' : 'clock' ?>"></i>
+                                                    <?= $isRealized ? 'Realized' : 'Unrealized' ?>
+                                                </span>
+                                            </div>
                                             <p><?= htmlspecialchars($profit['judul_investasi']) ?></p>
                                             <span class="transaction-badge"><?= ucfirst(str_replace('_', ' ', $profit['sumber_keuntungan'])) ?></span>
                                         </div>
@@ -333,12 +434,22 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                         <div class="transaction-list">
                             <?php if (count($kerugian_list) > 0): ?>
                                 <?php foreach ($kerugian_list as $loss): ?>
-                                    <div class="transaction-item loss-item">
+                                    <?php 
+                                    $isRealized = ($loss['status'] === 'realized');
+                                    $statusClass = $isRealized ? 'realized' : 'unrealized';
+                                    ?>
+                                    <div class="transaction-item loss-item <?= $statusClass ?>">
                                         <div class="transaction-icon">
                                             <i class="fas fa-minus-circle"></i>
                                         </div>
                                         <div class="transaction-content">
-                                            <h4><?= htmlspecialchars($loss['judul_kerugian']) ?></h4>
+                                            <div class="transaction-header-row">
+                                                <h4><?= htmlspecialchars($loss['judul_kerugian']) ?></h4>
+                                                <span class="status-badge <?= $statusClass ?>">
+                                                    <i class="fas fa-<?= $isRealized ? 'check-circle' : 'clock' ?>"></i>
+                                                    <?= $isRealized ? 'Realized' : 'Unrealized' ?>
+                                                </span>
+                                            </div>
                                             <p><?= htmlspecialchars($loss['judul_investasi']) ?></p>
                                             <span class="transaction-badge"><?= ucfirst(str_replace('_', ' ', $loss['sumber_kerugian'])) ?></span>
                                         </div>
@@ -615,7 +726,7 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
 
     <!-- Scripts -->
     <script src="assets/js/landing.js"></script>
-   <script>
+    <script>
     // ---------- Loading Screen ----------
     window.addEventListener('load', function () {
         const loadingScreen = document.getElementById('loadingScreen');
@@ -731,7 +842,7 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
     }
     document.addEventListener('keydown', e => e.key === 'Escape' && closeModal());
 
-    // ---------- Render Detail ----------
+    // ---------- Render Detail with Realized/Unrealized Status ----------
     function displayInvestmentDetail(inv) {
         const modalBody = document.getElementById('modalBody');
 
@@ -743,27 +854,54 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
             return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-paperclip"></i> Unduh Lampiran – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
         };
 
+        const statusBadge = (status) => {
+            const isRealized = (status === 'realized');
+            return isRealized 
+                ? '<span class="status-badge realized"><i class="fas fa-check-circle"></i> Realized</span>'
+                : '<span class="status-badge unrealized"><i class="fas fa-clock"></i> Unrealized</span>';
+        };
+
         const investProof = buktiBlock(inv.bukti_data);
 
-        const profitRows = inv.keuntungan.map(k => `
-            <div class="detail-transaction profit">
-                <div class="transaction-info">
-                    <strong>${k.judul_keuntungan}</strong>
-                    <span>${k.tanggal_keuntungan_formatted}</span>
+        const profitRows = inv.keuntungan.map(k => {
+            const isRealized = (k.status === 'realized');
+            const statusClass = isRealized ? 'realized' : 'unrealized';
+            return `
+            <div class="detail-transaction profit ${statusClass}">
+                <div class="transaction-status-header">
+                    <div class="transaction-info">
+                        <strong>${k.judul_keuntungan}</strong>
+                        <span>${k.tanggal_keuntungan_formatted}</span>
+                    </div>
+                    ${statusBadge(k.status)}
                 </div>
                 <div class="transaction-amount positive">+${k.jumlah_keuntungan_formatted}</div>
+                <div style="margin-top: 8px;">
+                    <small style="color: #6b7280;">Sumber: ${k.sumber_keuntungan.replace(/_/g, ' ')}</small>
+                </div>
                 ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
-            </div>`).join('');
+            </div>`;
+        }).join('');
 
-        const lossRows = inv.kerugian.map(k => `
-            <div class="detail-transaction loss">
-                <div class="transaction-info">
-                    <strong>${k.judul_kerugian}</strong>
-                    <span>${k.tanggal_kerugian_formatted}</span>
+        const lossRows = inv.kerugian.map(k => {
+            const isRealized = (k.status === 'realized');
+            const statusClass = isRealized ? 'realized' : 'unrealized';
+            return `
+            <div class="detail-transaction loss ${statusClass}">
+                <div class="transaction-status-header">
+                    <div class="transaction-info">
+                        <strong>${k.judul_kerugian}</strong>
+                        <span>${k.tanggal_kerugian_formatted}</span>
+                    </div>
+                    ${statusBadge(k.status)}
                 </div>
                 <div class="transaction-amount negative">-${k.jumlah_kerugian_formatted}</div>
+                <div style="margin-top: 8px;">
+                    <small style="color: #6b7280;">Sumber: ${k.sumber_kerugian.replace(/_/g, ' ')}</small>
+                </div>
                 ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
-            </div>`).join('');
+            </div>`;
+        }).join('');
 
         modalBody.innerHTML = `
             <div class="detail-container">
@@ -837,6 +975,6 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
     }, { threshold: 0.5 });
 
     document.querySelectorAll('.stat-value[data-value]').forEach(el => counterObserver.observe(el));
-</script>
+    </script>
 </body>
 </html>

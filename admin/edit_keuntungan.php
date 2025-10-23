@@ -2,6 +2,7 @@
 /**
  * SAZEN Investment Portfolio Manager v3.0
  * Edit Keuntungan - Database Storage
+ * FIXED: Currency parsing issue
  */
 
 session_start();
@@ -58,6 +59,79 @@ if ($flash) {
     $flash['type'] == 'success' ? $success = $flash['message'] : $error = $flash['message'];
 }
 
+/**
+ * Parse currency input correctly
+ * Handles formats: 1500000, 1.500.000, 1,500,000
+ */
+function parse_currency_fixed($value) {
+    if (empty($value)) return 0;
+    
+    // Remove whitespace
+    $value = trim($value);
+    
+    // Remove Rp and currency symbols
+    $value = preg_replace('/[Rp\s]/', '', $value);
+    
+    // Count dots and commas to determine format
+    $dotCount = substr_count($value, '.');
+    $commaCount = substr_count($value, ',');
+    
+    // If contains both dots and commas, determine which is decimal separator
+    if ($dotCount > 0 && $commaCount > 0) {
+        $lastDot = strrpos($value, '.');
+        $lastComma = strrpos($value, ',');
+        
+        // The last one is decimal separator
+        if ($lastDot > $lastComma) {
+            // Format: 1,500,000.50 (English)
+            $value = str_replace(',', '', $value); // Remove thousand separator
+        } else {
+            // Format: 1.500.000,50 (Indonesian)
+            $value = str_replace('.', '', $value); // Remove thousand separator
+            $value = str_replace(',', '.', $value); // Change decimal separator
+        }
+    }
+    // If only dots (could be thousand separator or decimal)
+    else if ($dotCount > 0) {
+        if ($dotCount > 1) {
+            // Multiple dots = thousand separator (1.500.000)
+            $value = str_replace('.', '', $value);
+        } else {
+            // Single dot - check if it's decimal or thousand separator
+            $parts = explode('.', $value);
+            if (strlen($parts[1]) <= 2) {
+                // Likely decimal: 1500.50
+                // Keep as is
+            } else {
+                // Likely thousand separator: 1.500 or 1.500000
+                $value = str_replace('.', '', $value);
+            }
+        }
+    }
+    // If only commas (could be thousand separator or decimal)
+    else if ($commaCount > 0) {
+        if ($commaCount > 1) {
+            // Multiple commas = thousand separator (1,500,000)
+            $value = str_replace(',', '', $value);
+        } else {
+            // Single comma - check if it's decimal or thousand separator
+            $parts = explode(',', $value);
+            if (strlen($parts[1]) <= 2) {
+                // Likely decimal: 1500,50
+                $value = str_replace(',', '.', $value);
+            } else {
+                // Likely thousand separator: 1,500 or 1,500000
+                $value = str_replace(',', '', $value);
+            }
+        }
+    }
+    // No separator - plain number (4, 1500000)
+    // Keep as is
+    
+    // Convert to float
+    return floatval($value);
+}
+
 // Process form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
@@ -66,7 +140,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $kategori_id = $_POST['kategori_id'] ?? '';
         $judul_keuntungan = sanitize_input($_POST['judul_keuntungan'] ?? '');
         $deskripsi = sanitize_input($_POST['deskripsi'] ?? '');
-        $jumlah_keuntungan = parse_currency($_POST['jumlah_keuntungan'] ?? '0');
+        
+        // USE FIXED PARSER
+        $jumlah_keuntungan = parse_currency_fixed($_POST['jumlah_keuntungan'] ?? '0');
+        
+        // Debug log (optional - remove in production)
+        error_log("Edit - Original input: " . ($_POST['jumlah_keuntungan'] ?? '0'));
+        error_log("Edit - Parsed value: " . $jumlah_keuntungan);
         
         // Parse percentage
         $persentase_input = $_POST['persentase_keuntungan'] ?? '';
@@ -263,10 +343,10 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                                name="jumlah_keuntungan" 
                                id="jumlah_keuntungan" 
                                class="form-control" 
-                               placeholder="Contoh: 1.500.000 atau 1500000"
+                               placeholder="Contoh: 1500000 atau 1.500.000"
                                value="<?= number_format($keuntungan['jumlah_keuntungan'], 0, ',', '.') ?>" 
                                required>
-                        <small class="form-hint">Format: 1.500.000 atau 1500000</small>
+                        <small class="form-hint">Format bebas: 4, 1500000, atau 1.500.000</small>
                     </div>
                     
                     <div class="form-group">

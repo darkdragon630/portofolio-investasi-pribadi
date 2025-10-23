@@ -1,12 +1,12 @@
 <?php
 require_once 'config/koneksi.php';
 
-// Ambil statistik global (HANYA INVESTASI AKTIF)
+// Ambil statistik global
 $sql_stats = "SELECT * FROM v_statistik_global";
 $stmt_stats = $koneksi->query($sql_stats);
 $stats = $stmt_stats->fetch();
 
-// Ambil semua investasi AKTIF dengan summary
+// Ambil semua investasi dengan summary
 $sql_investasi = "
     SELECT 
         i.id,
@@ -15,49 +15,30 @@ $sql_investasi = "
         i.jumlah as modal_investasi,
         i.tanggal_investasi,
         i.bukti_file,
-        i.status,
         k.nama_kategori,
-        COALESCE(ku_agg.total_keuntungan, 0) as total_keuntungan,
-        COALESCE(kr_agg.total_kerugian, 0) as total_kerugian,
-        (i.jumlah + COALESCE(ku_agg.total_keuntungan, 0) - COALESCE(kr_agg.total_kerugian, 0)) as nilai_sekarang,
+        COALESCE(SUM(ku.jumlah_keuntungan), 0) as total_keuntungan,
+        COALESCE(SUM(kr.jumlah_kerugian), 0) as total_kerugian,
+        (i.jumlah + COALESCE(SUM(ku.jumlah_keuntungan), 0) - COALESCE(SUM(kr.jumlah_kerugian), 0)) as nilai_sekarang,
         CASE 
-            WHEN i.jumlah > 0 THEN ((COALESCE(ku_agg.total_keuntungan, 0) - COALESCE(kr_agg.total_kerugian, 0)) / i.jumlah * 100)
+            WHEN i.jumlah > 0 THEN ((COALESCE(SUM(ku.jumlah_keuntungan), 0) - COALESCE(SUM(kr.jumlah_kerugian), 0)) / i.jumlah * 100)
             ELSE 0 
         END as roi_persen
     FROM investasi i
+    LEFT JOIN keuntungan_investasi ku ON i.id = ku.investasi_id
+    LEFT JOIN kerugian_investasi kr ON i.id = kr.investasi_id
     JOIN kategori k ON i.kategori_id = k.id
-    LEFT JOIN (
-        SELECT 
-            investasi_id,
-            SUM(jumlah_keuntungan) AS total_keuntungan
-        FROM keuntungan_investasi
-        GROUP BY investasi_id
-    ) ku_agg ON i.id = ku_agg.investasi_id
-    LEFT JOIN (
-        SELECT 
-            investasi_id,
-            SUM(jumlah_kerugian) AS total_kerugian
-        FROM kerugian_investasi
-        GROUP BY investasi_id
-    ) kr_agg ON i.id = kr_agg.investasi_id
-    WHERE i.status = 'aktif'
+    GROUP BY i.id, i.judul_investasi, i.deskripsi, i.jumlah, i.tanggal_investasi, i.bukti_file, k.nama_kategori
     ORDER BY i.tanggal_investasi DESC
 ";
 $stmt_investasi = $koneksi->query($sql_investasi);
 $investasi_list = $stmt_investasi->fetchAll();
 
-// Ambil semua kategori untuk filter (yang punya investasi aktif)
-$sql_kategori = "
-    SELECT DISTINCT k.* 
-    FROM kategori k
-    JOIN investasi i ON k.id = i.kategori_id
-    WHERE i.status = 'aktif'
-    ORDER BY k.nama_kategori
-";
+// Ambil semua kategori untuk filter
+$sql_kategori = "SELECT * FROM kategori ORDER BY nama_kategori";
 $stmt_kategori = $koneksi->query($sql_kategori);
 $kategori_list = $stmt_kategori->fetchAll();
 
-// Ambil keuntungan terbaru (5 teratas) - HANYA DARI INVESTASI AKTIF
+// Ambil keuntungan terbaru (5 teratas) - DENGAN STATUS
 $sql_keuntungan = "
     SELECT 
         ki.id,
@@ -71,14 +52,13 @@ $sql_keuntungan = "
     FROM keuntungan_investasi ki
     JOIN investasi i ON ki.investasi_id = i.id
     JOIN kategori k ON ki.kategori_id = k.id
-    WHERE i.status = 'aktif'
     ORDER BY ki.tanggal_keuntungan DESC
     LIMIT 5
 ";
 $stmt_keuntungan = $koneksi->query($sql_keuntungan);
 $keuntungan_list = $stmt_keuntungan->fetchAll();
 
-// Ambil kerugian terbaru (5 teratas) - HANYA DARI INVESTASI AKTIF
+// Ambil kerugian terbaru (5 teratas) - DENGAN STATUS
 $sql_kerugian = "
     SELECT 
         kr.id,
@@ -92,7 +72,6 @@ $sql_kerugian = "
     FROM kerugian_investasi kr
     JOIN investasi i ON kr.investasi_id = i.id
     JOIN kategori k ON kr.kategori_id = k.id
-    WHERE i.status = 'aktif'
     ORDER BY kr.tanggal_kerugian DESC
     LIMIT 5
 ";
@@ -168,12 +147,12 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                 
                 <div class="header-info">
                     <h2 class="portfolio-title">
-                        <span class="title-main">Portofolio Investasi Aktif</span>
+                        <span class="title-main">Portofolio Investasi Pribadi</span>
                         <span class="title-owner">Muhammad Burhanudin Syaifullah Azmi</span>
                     </h2>
                     <p class="portfolio-description">
                         <i class="fas fa-info-circle"></i>
-                        Menampilkan investasi aktif | Data real-time dari dashboard admin
+                        Data diperbarui secara real-time dari dashboard admin
                     </p>
                 </div>
             </div>
@@ -200,7 +179,7 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                             <i class="fas fa-wallet"></i>
                         </div>
                         <div class="stat-content">
-                            <div class="stat-label">Total Investasi Aktif</div>
+                            <div class="stat-label">Total Investasi</div>
                             <div class="stat-value" data-value="<?= $total_investasi ?>">
                                 <?= format_currency($total_investasi) ?>
                             </div>
@@ -242,7 +221,7 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                             <i class="fas fa-chart-line"></i>
                         </div>
                         <div class="stat-content">
-                            <div class="stat-label">Total Nilai Portfolio</div>
+                            <div class="stat-label">Total Nilai</div>
                             <div class="stat-value" data-value="<?= $total_nilai ?>">
                                 <?= format_currency($total_nilai) ?>
                             </div>
@@ -409,7 +388,7 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                 <div class="controls-header">
                     <h2 class="section-title">
                         <i class="fas fa-briefcase"></i>
-                        Daftar Investasi Aktif
+                        Daftar Investasi
                     </h2>
                     <div class="view-toggle">
                         <button class="toggle-btn active" data-view="grid" title="Grid View">
@@ -538,8 +517,8 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                         <div class="empty-icon">
                             <i class="fas fa-folder-open"></i>
                         </div>
-                        <h3>Belum Ada Investasi Aktif</h3>
-                        <p>Semua investasi sudah dijual atau belum ada data investasi</p>
+                        <h3>Belum Ada Investasi</h3>
+                        <p>Data investasi akan muncul di sini setelah ditambahkan</p>
                     </div>
                 <?php endif; ?>
             </section>
@@ -565,348 +544,348 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                     </div>
                     <p class="footer-tagline">Investment Portfolio Manager v3.0</p>
                     <p class="footer-copyright">
-                        &copy; <?= date('Y')?> Muhammad Burhanudin Syaifullah Azmi. All rights reserved.
-</p>
-</div>
-<div class="footer-links">
-                <div class="footer-column">
-                    <h4>Navigasi</h4>
-                    <ul>
-                        <li><a href="#header"><i class="fas fa-home"></i> Beranda</a></li>
-                        <li><a href="#stats"><i class="fas fa-chart-bar"></i> Statistik</a></li>
-                        <li><a href="#portfolio"><i class="fas fa-briefcase"></i> Portofolio</a></li>
-                    </ul>
-                </div>
-
-                <div class="footer-column">
-                    <h4>Tools</h4>
-                    <ul>
-                        <li><a href="https://kalkulasiinvest.netlify.app/" target="_blank">
-                            <i class="fas fa-calculator"></i> Kalkulator ROI
-                        </a></li>
-                        <li><a href="#"><i class="fas fa-chart-pie"></i> Analisis</a></li>
-                        <li><a href="#"><i class="fas fa-file-export"></i> Export Data</a></li>
-                    </ul>
-                </div>
-
-                <div class="footer-column">
-                    <h4>Support</h4>
-                    <ul>
-                        <li><a href="#"><i class="fas fa-question-circle"></i> FAQ</a></li>
-                        <li><a href="#"><i class="fas fa-headset"></i> Bantuan</a></li>
-                        <li><a href="#"><i class="fas fa-envelope"></i> Kontak</a></li>
-                    </ul>
-                </div>
-
-                <div class="footer-column">
-                    <h4>Info</h4>
-                    <p class="footer-info">
-                        <i class="fas fa-info-circle"></i>
-                        Platform ini menampilkan portfolio investasi aktif secara real-time.
+                        &copy; <?= date('Y') ?> Muhammad Burhanudin Syaifullah Azmi. All rights reserved.
                     </p>
-                    <div class="footer-stats">
-                        <span><i class="fas fa-database"></i> <?= count($investasi_list) ?> Investasi Aktif</span>
-                        <span><i class="fas fa-chart-line"></i> <?= count($keuntungan_list) ?> Profit Terbaru</span>
+                </div>
+
+                <div class="footer-links">
+                    <div class="footer-column">
+                        <h4>Navigasi</h4>
+                        <ul>
+                            <li><a href="#header"><i class="fas fa-home"></i> Beranda</a></li>
+                            <li><a href="#stats"><i class="fas fa-chart-bar"></i> Statistik</a></li>
+                            <li><a href="#portfolio"><i class="fas fa-briefcase"></i> Portofolio</a></li>
+                        </ul>
+                    </div>
+
+                    <div class="footer-column">
+                        <h4>Tools</h4>
+                        <ul>
+                            <li><a href="https://kalkulasiinvest.netlify.app/" target="_blank">
+                                <i class="fas fa-calculator"></i> Kalkulator ROI
+                            </a></li>
+                            <li><a href="#"><i class="fas fa-chart-pie"></i> Analisis</a></li>
+                            <li><a href="#"><i class="fas fa-file-export"></i> Export Data</a></li>
+                        </ul>
+                    </div>
+
+                    <div class="footer-column">
+                        <h4>Support</h4>
+                        <ul>
+                            <li><a href="#"><i class="fas fa-question-circle"></i> FAQ</a></li>
+                            <li><a href="#"><i class="fas fa-headset"></i> Bantuan</a></li>
+                            <li><a href="#"><i class="fas fa-envelope"></i> Kontak</a></li>
+                        </ul>
+                    </div>
+
+                    <div class="footer-column">
+                        <h4>Info</h4>
+                        <p class="footer-info">
+                            <i class="fas fa-info-circle"></i>
+                            Platform ini digunakan untuk mencatat dan memantau portofolio investasi pribadi secara real-time.
+                        </p>
+                        <div class="footer-stats">
+                            <span><i class="fas fa-database"></i> <?= count($investasi_list) ?> Investasi</span>
+                            <span><i class="fas fa-chart-line"></i> <?= count($keuntungan_list) ?> Profit</span>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div class="footer-bottom">
-            <div class="footer-social">
-                <a href="#" aria-label="GitHub"><i class="fab fa-github"></i></a>
-                <a href="#" aria-label="LinkedIn"><i class="fab fa-linkedin"></i></a>
-                <a href="#" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
-                <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+            <div class="footer-bottom">
+                <div class="footer-social">
+                    <a href="#" aria-label="GitHub"><i class="fab fa-github"></i></a>
+                    <a href="#" aria-label="LinkedIn"><i class="fab fa-linkedin"></i></a>
+                    <a href="#" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
+                    <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+                </div>
+                <div class="footer-version">
+                    <span class="version-badge">
+                        <i class="fas fa-code-branch"></i> Version 3.0.0
+                    </span>
+                    <span class="update-info">
+                        <i class="fas fa-clock"></i> Updated: <?= date('d M Y') ?>
+                    </span>
+                </div>
             </div>
-            <div class="footer-version">
-                <span class="version-badge">
-                    <i class="fas fa-code-branch"></i> Version 3.0.0
-                </span>
-                <span class="update-info">
-                    <i class="fas fa-clock"></i> Updated: <?= date('d M Y') ?>
-                </span>
+        </div>
+    </footer>
+
+    <!-- Scroll to Top Button -->
+    <button class="scroll-to-top" id="scrollToTop" aria-label="Scroll to top">
+        <i class="fas fa-arrow-up"></i>
+    </button>
+
+    <!-- Investment Detail Modal -->
+    <div class="modal" id="investmentModal">
+        <div class="modal-overlay" onclick="closeModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Detail Investasi</h3>
+                <button class="modal-close" onclick="closeModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <div class="modal-loading">
+                    <div class="spinner"></div>
+                    <p>Memuat detail...</p>
+                </div>
             </div>
         </div>
     </div>
-</footer>
 
-<!-- Scroll to Top Button -->
-<button class="scroll-to-top" id="scrollToTop" aria-label="Scroll to top">
-    <i class="fas fa-arrow-up"></i>
-</button>
+    <!-- Scripts -->
+    <script src="assets/js/landing.js"></script>
+    <script>
+    // ---------- Loading Screen ----------
+    window.addEventListener('load', function () {
+        const loadingScreen = document.getElementById('loadingScreen');
+        const progressBar = document.getElementById('loadingProgress');
 
-<!-- Investment Detail Modal -->
-<div class="modal" id="investmentModal">
-    <div class="modal-overlay" onclick="closeModal()"></div>
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3 id="modalTitle">Detail Investasi</h3>
-            <button class="modal-close" onclick="closeModal()">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="modal-body" id="modalBody">
-            <div class="modal-loading">
-                <div class="spinner"></div>
-                <p>Memuat detail...</p>
-            </div>
-        </div>
-    </div>
-</div>
+        let progress = 0;
+        const interval = setInterval(() => {
+            progress += 10;
+            progressBar.style.width = progress + '%';
 
-<!-- Scripts -->
-<script src="assets/js/landing.js"></script>
-<script>
-// ---------- Loading Screen ----------
-window.addEventListener('load', function () {
-    const loadingScreen = document.getElementById('loadingScreen');
-    const progressBar = document.getElementById('loadingProgress');
-
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += 10;
-        progressBar.style.width = progress + '%';
-
-        if (progress >= 100) {
-            clearInterval(interval);
-            setTimeout(() => {
-                loadingScreen.classList.add('fade-out');
+            if (progress >= 100) {
+                clearInterval(interval);
                 setTimeout(() => {
-                    loadingScreen.style.display = 'none';
-                }, 500);
-            }, 300);
-        }
-    }, 50);
-});
-
-// ---------- View Toggle ----------
-document.querySelectorAll('.toggle-btn').forEach(btn => {
-    btn.addEventListener('click', function () {
-        document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
-
-        const view = this.dataset.view;
-        const grid = document.getElementById('investmentsGrid');
-
-        if (view === 'list') {
-            grid.classList.add('list-view');
-            grid.classList.remove('grid-view');
-        } else {
-            grid.classList.add('grid-view');
-            grid.classList.remove('list-view');
-        }
-    });
-});
-
-// ---------- Filter & Sort ----------
-document.getElementById('searchInput').addEventListener('input', filterInvestments);
-document.getElementById('categoryFilter').addEventListener('change', filterInvestments);
-document.getElementById('sortSelect').addEventListener('change', e => sortInvestments(e.target.value));
-
-function filterInvestments() {
-    const keyword = document.getElementById('searchInput').value.toLowerCase();
-    const category = document.getElementById('categoryFilter').value;
-    const cards = document.querySelectorAll('.investment-card');
-
-    cards.forEach(card => {
-        const title = card.dataset.title.toLowerCase();
-        const cardCategory = card.dataset.category;
-        const matchSearch = title.includes(keyword);
-        const matchCategory = category === 'all' || cardCategory === category;
-
-        card.style.display = matchSearch && matchCategory ? 'block' : 'none';
-    });
-}
-
-function sortInvestments(sortBy) {
-    const grid = document.getElementById('investmentsGrid');
-    const cards = Array.from(grid.querySelectorAll('.investment-card'));
-
-    cards.sort((a, b) => {
-        switch (sortBy) {
-            case 'date-desc': return new Date(b.dataset.date) - new Date(a.dataset.date);
-            case 'date-asc': return new Date(a.dataset.date) - new Date(b.dataset.date);
-            case 'amount-desc': return parseFloat(b.dataset.amount) - parseFloat(a.dataset.amount);
-            case 'amount-asc': return parseFloat(a.dataset.amount) - parseFloat(b.dataset.amount);
-            case 'roi-desc': return parseFloat(b.dataset.roi) - parseFloat(a.dataset.roi);
-            case 'roi-asc': return parseFloat(a.dataset.roi) - parseFloat(b.dataset.roi);
-            default: return 0;
-        }
-    });
-
-    cards.forEach(card => grid.appendChild(card));
-}
-
-// ---------- Scroll to Top ----------
-const scrollBtn = document.getElementById('scrollToTop');
-window.addEventListener('scroll', () => {
-    scrollBtn.classList.toggle('show', window.pageYOffset > 300);
-});
-scrollBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
-
-// ---------- Modal ----------
-function showInvestmentDetail(id) {
-    const modal = document.getElementById('investmentModal');
-    const modalBody = document.getElementById('modalBody');
-    modal.classList.add('show');
-    document.body.style.overflow = 'hidden';
-
-    fetch(`get_investment_detail.php?id=${id}`)
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                displayInvestmentDetail(data.investment);
-            } else {
-                modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>${data.message}</p></div>`;
+                    loadingScreen.classList.add('fade-out');
+                    setTimeout(() => {
+                        loadingScreen.style.display = 'none';
+                    }, 500);
+                }, 300);
             }
-        })
-        .catch(() => {
-            modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>Terjadi kesalahan saat memuat data</p></div>`;
+        }, 50);
+    });
+
+    // ---------- View Toggle ----------
+    document.querySelectorAll('.toggle-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+
+            const view = this.dataset.view;
+            const grid = document.getElementById('investmentsGrid');
+
+            if (view === 'list') {
+                grid.classList.add('list-view');
+                grid.classList.remove('grid-view');
+            } else {
+                grid.classList.add('grid-view');
+                grid.classList.remove('list-view');
+            }
         });
-}
-
-function closeModal() {
-    const modal = document.getElementById('investmentModal');
-    modal.classList.remove('show');
-    document.body.style.overflow = '';
-}
-document.addEventListener('keydown', e => e.key === 'Escape' && closeModal());
-
-// ---------- Render Detail with Realized/Unrealized Status ----------
-function displayInvestmentDetail(inv) {
-    const modalBody = document.getElementById('modalBody');
-
-    const buktiBlock = (data) => {
-        if (!data) return `<div class="detail-no-image"><i class="fas fa-image"></i><p>Tidak ada bukti</p></div>`;
-        const { preview_url, is_image, is_pdf, original_name, size_formatted } = data;
-        if (is_image) return `<div class="detail-image"><img src="${preview_url}" alt="Bukti" loading="lazy"><p class="file-meta">${original_name} • ${size_formatted}</p></div>`;
-        if (is_pdf) return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-file-pdf"></i> Lihat PDF – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
-        return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-paperclip"></i> Unduh Lampiran – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
-    };
-
-    const statusBadge = (status) => {
-        const isRealized = (status === 'realized');
-        return isRealized 
-            ? '<span class="status-badge realized"><i class="fas fa-check-circle"></i> Realized</span>'
-            : '<span class="status-badge unrealized"><i class="fas fa-clock"></i> Unrealized</span>';
-    };
-
-    const investProof = buktiBlock(inv.bukti_data);
-
-    const profitRows = inv.keuntungan.map(k => {
-        const isRealized = (k.status === 'realized');
-        const statusClass = isRealized ? 'realized' : 'unrealized';
-        return `
-        <div class="detail-transaction profit ${statusClass}">
-            <div class="transaction-status-header">
-                <div class="transaction-info">
-                    <strong>${k.judul_keuntungan}</strong>
-                    <span>${k.tanggal_keuntungan_formatted}</span>
-                </div>
-                ${statusBadge(k.status)}
-            </div>
-            <div class="transaction-amount positive">+${k.jumlah_keuntungan_formatted}</div>
-            <div style="margin-top: 8px;">
-                <small style="color: #6b7280;">Sumber: ${k.sumber_keuntungan.replace(/_/g, ' ')}</small>
-            </div>
-            ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
-        </div>`;
-    }).join('');
-
-    const lossRows = inv.kerugian.map(k => {
-        const isRealized = (k.status === 'realized');
-        const statusClass = isRealized ? 'realized' : 'unrealized';
-        return `
-        <div class="detail-transaction loss ${statusClass}">
-            <div class="transaction-status-header">
-                <div class="transaction-info">
-                    <strong>${k.judul_kerugian}</strong>
-                    <span>${k.tanggal_kerugian_formatted}</span>
-                </div>
-                ${statusBadge(k.status)}
-            </div>
-            <div class="transaction-amount negative">-${k.jumlah_kerugian_formatted}</div>
-            <div style="margin-top: 8px;">
-                <small style="color: #6b7280;">Sumber: ${k.sumber_kerugian.replace(/_/g, ' ')}</small>
-            </div>
-            ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
-        </div>`;
-    }).join('');
-
-    modalBody.innerHTML = `
-        <div class="detail-container">
-            ${investProof}
-            <div class="detail-info">
-                <div class="detail-section">
-                    <h4><i class="fas fa-info-circle"></i> Informasi Dasar</h4>
-                    <div class="detail-grid">
-                        <div class="detail-item"><span class="detail-label">Judul</span><span class="detail-value">${inv.judul_investasi}</span></div>
-                        <div class="detail-item"><span class="detail-label">Kategori</span><span class="detail-value">${inv.nama_kategori}</span></div>
-                        <div class="detail-item"><span class="detail-label">Tanggal</span><span class="detail-value">${inv.tanggal_investasi_formatted}</span></div>
-                        <div class="detail-item"><span class="detail-label">Status</span><span class="detail-value"><span class="status-badge realized"><i class="fas fa-check-circle"></i> Aktif</span></span></div>
-                    </div>
-                </div>
-
-                <div class="detail-section">
-                    <h4><i class="fas fa-wallet"></i> Informasi Keuangan</h4>
-                    <div class="detail-grid">
-                        <div class="detail-item"><span class="detail-label">Modal</span><span class="detail-value">${inv.modal_investasi_formatted}</span></div>
-                        <div class="detail-item"><span class="detail-label">Nilai Sekarang</span><span class="detail-value">${inv.nilai_sekarang_formatted}</span></div>
-                        <div class="detail-item"><span class="detail-label">Total Keuntungan</span><span class="detail-value positive">+${inv.total_keuntungan_formatted}</span></div>
-                        <div class="detail-item"><span class="detail-label">Total Kerugian</span><span class="detail-value negative">-${inv.total_kerugian_formatted}</span></div>
-                        <div class="detail-item"><span class="detail-label">ROI</span><span class="detail-value ${inv.roi_persen >= 0 ? 'positive' : 'negative'}">${inv.roi_persen}%</span></div>
-                    </div>
-                </div>
-
-                ${inv.deskripsi ? `<div class="detail-section"><h4><i class="fas fa-align-left"></i> Deskripsi</h4><p class="detail-description">${inv.deskripsi}</p></div>` : ''}
-
-                ${inv.keuntungan.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-up"></i> Riwayat Keuntungan (${inv.keuntungan.length})</h4><div class="detail-transactions">${profitRows}</div></div>` : ''}
-
-                ${inv.kerugian.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-down"></i> Riwayat Kerugian (${inv.kerugian.length})</h4><div class="detail-transactions">${lossRows}</div></div>` : ''}
-            </div>
-        </div>`;
-}
-
-// ---------- AOS (Animate on Scroll) ----------
-const observer = new IntersectionObserver(entries => {
-    entries.forEach(entry => {
-        if (entry.isIntersecting) entry.target.classList.add('aos-animate');
     });
-}, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
-document.querySelectorAll('[data-aos]').forEach(el => observer.observe(el));
 
-// ---------- Counter Animation ----------
-function animateCounter(el) {
-    const target = parseFloat(el.dataset.value);
-    const duration = 2000;
-    const increment = target / (duration / 16);
-    let current = 0;
+    // ---------- Filter & Sort ----------
+    document.getElementById('searchInput').addEventListener('input', filterInvestments);
+    document.getElementById('categoryFilter').addEventListener('change', filterInvestments);
+    document.getElementById('sortSelect').addEventListener('change', e => sortInvestments(e.target.value));
 
-    const timer = setInterval(() => {
-        current += increment;
-        if (current >= target) {
-            current = target;
-            clearInterval(timer);
-        }
-        el.textContent = new Intl.NumberFormat('id-ID', {
-            style: 'currency',
-            currency: 'IDR',
-            minimumFractionDigits: 2
-        }).format(current);
-    }, 16);
-}
+    function filterInvestments() {
+        const keyword = document.getElementById('searchInput').value.toLowerCase();
+        const category = document.getElementById('categoryFilter').value;
+        const cards = document.querySelectorAll('.investment-card');
 
-const counterObserver = new IntersectionObserver(entries => {
-    entries.forEach(entry => {
-        if (entry.isIntersecting && !entry.target.classList.contains('counted')) {
-            entry.target.classList.add('counted');
-            animateCounter(entry.target);
-        }
+        cards.forEach(card => {
+            const title = card.dataset.title.toLowerCase();
+            const cardCategory = card.dataset.category;
+            const matchSearch = title.includes(keyword);
+            const matchCategory = category === 'all' || cardCategory === category;
+
+            card.style.display = matchSearch && matchCategory ? 'block' : 'none';
+        });
+    }
+
+    function sortInvestments(sortBy) {
+        const grid = document.getElementById('investmentsGrid');
+        const cards = Array.from(grid.querySelectorAll('.investment-card'));
+
+        cards.sort((a, b) => {
+            switch (sortBy) {
+                case 'date-desc': return new Date(b.dataset.date) - new Date(a.dataset.date);
+                case 'date-asc': return new Date(a.dataset.date) - new Date(b.dataset.date);
+                case 'amount-desc': return parseFloat(b.dataset.amount) - parseFloat(a.dataset.amount);
+                case 'amount-asc': return parseFloat(a.dataset.amount) - parseFloat(b.dataset.amount);
+                case 'roi-desc': return parseFloat(b.dataset.roi) - parseFloat(a.dataset.roi);
+                case 'roi-asc': return parseFloat(a.dataset.roi) - parseFloat(b.dataset.roi);
+                default: return 0;
+            }
+        });
+
+        cards.forEach(card => grid.appendChild(card));
+    }
+
+    // ---------- Scroll to Top ----------
+    const scrollBtn = document.getElementById('scrollToTop');
+    window.addEventListener('scroll', () => {
+        scrollBtn.classList.toggle('show', window.pageYOffset > 300);
     });
-}, { threshold: 0.5 });
+    scrollBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 
-document.querySelectorAll('.stat-value[data-value]').forEach(el => counterObserver.observe(el));
-</script> 
+    // ---------- Modal ----------
+    function showInvestmentDetail(id) {
+        const modal = document.getElementById('investmentModal');
+        const modalBody = document.getElementById('modalBody');
+        modal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+
+        fetch(`get_investment_detail.php?id=${id}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    displayInvestmentDetail(data.investment);
+                } else {
+                    modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>${data.message}</p></div>`;
+                }
+            })
+            .catch(() => {
+                modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>Terjadi kesalahan saat memuat data</p></div>`;
+            });
+    }
+
+    function closeModal() {
+        const modal = document.getElementById('investmentModal');
+        modal.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', e => e.key === 'Escape' && closeModal());
+
+    // ---------- Render Detail with Realized/Unrealized Status ----------
+    function displayInvestmentDetail(inv) {
+        const modalBody = document.getElementById('modalBody');
+
+        const buktiBlock = (data) => {
+            if (!data) return `<div class="detail-no-image"><i class="fas fa-image"></i><p>Tidak ada bukti</p></div>`;
+            const { preview_url, is_image, is_pdf, original_name, size_formatted } = data;
+            if (is_image) return `<div class="detail-image"><img src="${preview_url}" alt="Bukti" loading="lazy"><p class="file-meta">${original_name} • ${size_formatted}</p></div>`;
+            if (is_pdf) return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-file-pdf"></i> Lihat PDF – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
+            return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-paperclip"></i> Unduh Lampiran – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
+        };
+
+        const statusBadge = (status) => {
+            const isRealized = (status === 'realized');
+            return isRealized 
+                ? '<span class="status-badge realized"><i class="fas fa-check-circle"></i> Realized</span>'
+                : '<span class="status-badge unrealized"><i class="fas fa-clock"></i> Unrealized</span>';
+        };
+
+        const investProof = buktiBlock(inv.bukti_data);
+
+        const profitRows = inv.keuntungan.map(k => {
+            const isRealized = (k.status === 'realized');
+            const statusClass = isRealized ? 'realized' : 'unrealized';
+            return `
+            <div class="detail-transaction profit ${statusClass}">
+                <div class="transaction-status-header">
+                    <div class="transaction-info">
+                        <strong>${k.judul_keuntungan}</strong>
+                        <span>${k.tanggal_keuntungan_formatted}</span>
+                    </div>
+                    ${statusBadge(k.status)}
+                </div>
+                <div class="transaction-amount positive">+${k.jumlah_keuntungan_formatted}</div>
+                <div style="margin-top: 8px;">
+                    <small style="color: #6b7280;">Sumber: ${k.sumber_keuntungan.replace(/_/g, ' ')}</small>
+                </div>
+                ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
+            </div>`;
+        }).join('');
+
+        const lossRows = inv.kerugian.map(k => {
+            const isRealized = (k.status === 'realized');
+            const statusClass = isRealized ? 'realized' : 'unrealized';
+            return `
+            <div class="detail-transaction loss ${statusClass}">
+                <div class="transaction-status-header">
+                    <div class="transaction-info">
+                        <strong>${k.judul_kerugian}</strong>
+                        <span>${k.tanggal_kerugian_formatted}</span>
+                    </div>
+                    ${statusBadge(k.status)}
+                </div>
+                <div class="transaction-amount negative">-${k.jumlah_kerugian_formatted}</div>
+                <div style="margin-top: 8px;">
+                    <small style="color: #6b7280;">Sumber: ${k.sumber_kerugian.replace(/_/g, ' ')}</small>
+                </div>
+                ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
+            </div>`;
+        }).join('');
+
+        modalBody.innerHTML = `
+            <div class="detail-container">
+                ${investProof}
+                <div class="detail-info">
+                    <div class="detail-section">
+                        <h4><i class="fas fa-info-circle"></i> Informasi Dasar</h4>
+                        <div class="detail-grid">
+                            <div class="detail-item"><span class="detail-label">Judul</span><span class="detail-value">${inv.judul_investasi}</span></div>
+                            <div class="detail-item"><span class="detail-label">Kategori</span><span class="detail-value">${inv.nama_kategori}</span></div>
+                            <div class="detail-item"><span class="detail-label">Tanggal</span><span class="detail-value">${inv.tanggal_investasi_formatted}</span></div>
+                        </div>
+                    </div>
+
+                    <div class="detail-section">
+                        <h4><i class="fas fa-wallet"></i> Informasi Keuangan</h4>
+                        <div class="detail-grid">
+                            <div class="detail-item"><span class="detail-label">Modal</span><span class="detail-value">${inv.modal_investasi_formatted}</span></div>
+                            <div class="detail-item"><span class="detail-label">Nilai Sekarang</span><span class="detail-value">${inv.nilai_sekarang_formatted}</span></div>
+                            <div class="detail-item"><span class="detail-label">Total Keuntungan</span><span class="detail-value positive">+${inv.total_keuntungan_formatted}</span></div>
+                            <div class="detail-item"><span class="detail-label">Total Kerugian</span><span class="detail-value negative">-${inv.total_kerugian_formatted}</span></div>
+                            <div class="detail-item"><span class="detail-label">ROI</span><span class="detail-value ${inv.roi_persen >= 0 ? 'positive' : 'negative'}">${inv.roi_persen}%</span></div>
+                        </div>
+                    </div>
+
+                    ${inv.deskripsi ? `<div class="detail-section"><h4><i class="fas fa-align-left"></i> Deskripsi</h4><p class="detail-description">${inv.deskripsi}</p></div>` : ''}
+
+                    ${inv.keuntungan.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-up"></i> Riwayat Keuntungan (${inv.keuntungan.length})</h4><div class="detail-transactions">${profitRows}</div></div>` : ''}
+
+                    ${inv.kerugian.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-down"></i> Riwayat Kerugian (${inv.kerugian.length})</h4><div class="detail-transactions">${lossRows}</div></div>` : ''}
+                </div>
+            </div>`;
+    }
+
+    // ---------- AOS (Animate on Scroll) ----------
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) entry.target.classList.add('aos-animate');
+        });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+    document.querySelectorAll('[data-aos]').forEach(el => observer.observe(el));
+
+    // ---------- Counter Animation ----------
+    function animateCounter(el) {
+        const target = parseFloat(el.dataset.value);
+        const duration = 2000;
+        const increment = target / (duration / 16);
+        let current = 0;
+
+        const timer = setInterval(() => {
+            current += increment;
+            if (current >= target) {
+                current = target;
+                clearInterval(timer);
+            }
+            el.textContent = new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 2
+            }).format(current);
+        }, 16);
+    }
+
+    const counterObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && !entry.target.classList.contains('counted')) {
+                entry.target.classList.add('counted');
+                animateCounter(entry.target);
+            }
+        });
+    }, { threshold: 0.5 });
+
+    document.querySelectorAll('.stat-value[data-value]').forEach(el => counterObserver.observe(el));
+    </script>
 </body>
 </html>

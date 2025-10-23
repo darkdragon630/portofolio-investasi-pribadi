@@ -35,16 +35,30 @@ $sql_stats = "
     SELECT 
         COUNT(DISTINCT i.id) as total_portofolio,
         COALESCE(SUM(i.jumlah), 0) as total_investasi,
-        COALESCE(SUM(ku.jumlah_keuntungan), 0) as total_keuntungan,
-        COALESCE(SUM(kr.jumlah_kerugian), 0) as total_kerugian,
-        (COALESCE(SUM(i.jumlah), 0) + COALESCE(SUM(ku.jumlah_keuntungan), 0) - COALESCE(SUM(kr.jumlah_kerugian), 0)) as total_nilai,
-        COUNT(DISTINCT ku.id) as total_transaksi_keuntungan,
-        COUNT(DISTINCT kr.id) as total_transaksi_kerugian,
+        COALESCE(SUM(ku_agg.total_keuntungan), 0) as total_keuntungan,
+        COALESCE(SUM(kr_agg.total_kerugian), 0) as total_kerugian,
+        (COALESCE(SUM(i.jumlah), 0) + COALESCE(SUM(ku_agg.total_keuntungan), 0) - COALESCE(SUM(kr_agg.total_kerugian), 0)) as total_nilai,
+        COALESCE(SUM(ku_agg.jumlah_transaksi), 0) as total_transaksi_keuntungan,
+        COALESCE(SUM(kr_agg.jumlah_transaksi), 0) as total_transaksi_kerugian,
         COUNT(DISTINCT k.id) as total_kategori
     FROM investasi i
-    LEFT JOIN keuntungan_investasi ku ON i.id = ku.investasi_id
-    LEFT JOIN kerugian_investasi kr ON i.id = kr.investasi_id
     LEFT JOIN kategori k ON i.kategori_id = k.id
+    LEFT JOIN (
+        SELECT 
+            investasi_id,
+            SUM(jumlah_keuntungan) AS total_keuntungan,
+            COUNT(*) AS jumlah_transaksi
+        FROM keuntungan_investasi
+        GROUP BY investasi_id
+    ) ku_agg ON i.id = ku_agg.investasi_id
+    LEFT JOIN (
+        SELECT 
+            investasi_id,
+            SUM(jumlah_kerugian) AS total_kerugian,
+            COUNT(*) AS jumlah_transaksi
+        FROM kerugian_investasi
+        GROUP BY investasi_id
+    ) kr_agg ON i.id = kr_agg.investasi_id
 ";
 $stmt_stats = $koneksi->query($sql_stats);
 $stats = $stmt_stats->fetch();
@@ -75,14 +89,25 @@ $sql_investasi = "
         i.tanggal_investasi,
         i.bukti_file,
         k.nama_kategori,
-        COALESCE(SUM(ku.jumlah_keuntungan), 0) as total_keuntungan,
-        COALESCE(SUM(kr.jumlah_kerugian), 0) as total_kerugian,
-        (i.jumlah + COALESCE(SUM(ku.jumlah_keuntungan), 0) - COALESCE(SUM(kr.jumlah_kerugian), 0)) as nilai_sekarang
+        COALESCE(ku_agg.total_keuntungan, 0) as total_keuntungan,
+        COALESCE(kr_agg.total_kerugian, 0) as total_kerugian,
+        (i.jumlah + COALESCE(ku_agg.total_keuntungan, 0) - COALESCE(kr_agg.total_kerugian, 0)) as nilai_sekarang
     FROM investasi i
-    LEFT JOIN keuntungan_investasi ku ON i.id = ku.investasi_id
-    LEFT JOIN kerugian_investasi kr ON i.id = kr.investasi_id
     JOIN kategori k ON i.kategori_id = k.id
-    GROUP BY i.id, i.judul_investasi, i.deskripsi, i.jumlah, i.tanggal_investasi, i.bukti_file, k.nama_kategori
+    LEFT JOIN (
+        SELECT 
+            investasi_id,
+            SUM(jumlah_keuntungan) AS total_keuntungan
+        FROM keuntungan_investasi
+        GROUP BY investasi_id
+    ) ku_agg ON i.id = ku_agg.investasi_id
+    LEFT JOIN (
+        SELECT 
+            investasi_id,
+            SUM(jumlah_kerugian) AS total_kerugian
+        FROM kerugian_investasi
+        GROUP BY investasi_id
+    ) kr_agg ON i.id = kr_agg.investasi_id
     ORDER BY i.tanggal_investasi DESC
     LIMIT 6
 ";
@@ -144,13 +169,27 @@ $sql_kategori = "
         k.nama_kategori,
         COUNT(DISTINCT i.id) as jumlah_investasi,
         COALESCE(SUM(i.jumlah), 0) as total_investasi,
-        COALESCE(SUM(ku.jumlah_keuntungan), 0) as total_keuntungan,
-        COALESCE(SUM(kr.jumlah_kerugian), 0) as total_kerugian,
-        (COALESCE(SUM(i.jumlah), 0) + COALESCE(SUM(ku.jumlah_keuntungan), 0) - COALESCE(SUM(kr.jumlah_kerugian), 0)) as total_nilai
+        COALESCE(SUM(ku_agg.total_keuntungan), 0) as total_keuntungan,
+        COALESCE(SUM(kr_agg.total_kerugian), 0) as total_kerugian,
+        (COALESCE(SUM(i.jumlah), 0) + COALESCE(SUM(ku_agg.total_keuntungan), 0) - COALESCE(SUM(kr_agg.total_kerugian), 0)) as total_nilai
     FROM kategori k
     LEFT JOIN investasi i ON k.id = i.kategori_id
-    LEFT JOIN keuntungan_investasi ku ON i.id = ku.investasi_id
-    LEFT JOIN kerugian_investasi kr ON i.id = kr.investasi_id
+    LEFT JOIN (
+        SELECT 
+            ki.investasi_id,
+            SUM(ki.jumlah_keuntungan) AS total_keuntungan
+        FROM keuntungan_investasi ki
+        JOIN investasi i2 ON ki.investasi_id = i2.id
+        GROUP BY ki.investasi_id, i2.kategori_id
+    ) ku_agg ON i.id = ku_agg.investasi_id
+    LEFT JOIN (
+        SELECT 
+            kr.investasi_id,
+            SUM(kr.jumlah_kerugian) AS total_kerugian
+        FROM kerugian_investasi kr
+        JOIN investasi i2 ON kr.investasi_id = i2.id
+        GROUP BY kr.investasi_id, i2.kategori_id
+    ) kr_agg ON i.id = kr_agg.investasi_id
     GROUP BY k.id, k.nama_kategori
     HAVING jumlah_investasi > 0
     ORDER BY total_nilai DESC

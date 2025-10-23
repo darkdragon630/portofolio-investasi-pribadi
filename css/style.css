@@ -1,6 +1,6 @@
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * Landing Page Styles - Complete with Cash Management
+ * Landing Page Styles - Improved & Fully Responsive
  */
 
 /* ========================================
@@ -473,7 +473,7 @@ body {
 }
 
 .stat-value {
-  font-size: 1.375rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 0.25rem;
@@ -546,6 +546,7 @@ body {
   transition: all 0.3s ease;
   position: relative;
   cursor: pointer;
+  min-width: 20px;
 }
 
 .bar-segment:hover {
@@ -563,13 +564,15 @@ body {
 .bar-label {
   color: white;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  white-space: nowrap;
+  padding: 0 0.5rem;
 }
 
 .allocation-legend {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -603,6 +606,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-width: 0;
 }
 
 .legend-label {
@@ -614,6 +618,7 @@ body {
   font-size: 1.125rem;
   font-weight: 700;
   color: white;
+  word-break: break-word;
 }
 
 .legend-percent {
@@ -634,7 +639,7 @@ body {
   align-items: center;
   gap: 0.5rem;
   color: rgba(255,255,255,0.8);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
 }
 
 .summary-item i {
@@ -718,7 +723,7 @@ body {
 }
 
 .analytics-value {
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 700;
   line-height: 1;
   margin-bottom: 0.5rem;
@@ -807,7 +812,7 @@ body {
 
 .transactions-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 1.5rem;
 }
 
@@ -1037,7 +1042,7 @@ body {
 .filter-group {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.5rem;
 }
 
 .filter-group label {
@@ -1075,7 +1080,7 @@ body {
 
 .investments-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 1.5rem;
 }
 
@@ -1171,6 +1176,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .card-body {
@@ -1412,7 +1418,7 @@ body {
 
 .footer-links {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
   gap: 2rem;
 }
 
@@ -1778,7 +1784,7 @@ body {
 
 .detail-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
   gap: 1rem;
 }
 
@@ -1920,6 +1926,18 @@ body {
   .footer-content {
     grid-template-columns: 1fr 1.5fr;
   }
+
+  .stat-value {
+    font-size: 1.375rem;
+  }
+
+  .analytics-value {
+    font-size: 2rem;
+  }
+
+  .allocation-legend {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (min-width: 768px) {
@@ -1963,6 +1981,22 @@ body {
   
   .transaction-icon {
     display: flex;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    background: var(--surface-secondary);
+    border-radius: var(--radius-md);
+    align-items: center;
+    justify-content: center;
+    font-size: 1.125rem;
+  }
+
+  .profit-item .transaction-icon {
+    color: var(--success-color);
+  }
+
+  .loss-item .transaction-icon {
+    color: var(--danger-color);
   }
   
   .transaction-item {
@@ -1996,6 +2030,14 @@ body {
   .transaction-header-row {
     display: block;
   }
+
+  .investments-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  }
+
+  .detail-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  }
 }
 
 @media (min-width: 1024px) {
@@ -2017,6 +2059,10 @@ body {
   
   .footer {
     padding: 4rem 0 2rem;
+  }
+
+  .bar-label {
+    font-size: 0.9rem;
   }
 }
 
@@ -2063,10 +2109,25 @@ body {
   .stat-card {
     padding: 1rem;
   }
+
+  .stat-icon {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    font-size: 1.25rem;
+  }
+
+  .stat-value {
+    font-size: 1.125rem;
+  }
   
   .analytics-grid, .transactions-container {
     grid-template-columns: 1fr;
     gap: 1rem;
+  }
+
+  .analytics-value {
+    font-size: 1.5rem;
   }
   
   .transaction-list {
@@ -2091,6 +2152,7 @@ body {
   
   .investments-grid {
     gap: 1rem;
+    grid-template-columns: 1fr;
   }
   
   .card-stats {
@@ -2146,6 +2208,36 @@ body {
   
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .allocation-bar {
+    height: 50px;
+  }
+
+  .bar-label {
+    font-size: 0.75rem;
+  }
+
+  .allocation-legend {
+    grid-template-columns: 1fr;
+  }
+
+  .legend-color {
+    width: 36px;
+    height: 36px;
+  }
+
+  .legend-value {
+    font-size: 1rem;
+  }
+
+  .header-badges {
+    align-items: stretch;
+  }
+
+  .category-badge {
+    text-align: center;
+    justify-content: center;
   }
 }
 

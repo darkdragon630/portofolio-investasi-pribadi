@@ -1,12 +1,46 @@
 <?php
 require_once 'config/koneksi.php';
 
-// Ambil statistik global
-$sql_stats = "SELECT * FROM v_statistik_global";
+/* ========================================
+   QUERY SALDO KAS
+======================================== */
+$sql_cash = "
+    SELECT 
+        COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END), 0) -
+        COALESCE(SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END), 0) as saldo_kas
+    FROM cash_balance
+";
+$stmt_cash = $koneksi->query($sql_cash);
+$cash_data = $stmt_cash->fetch();
+$saldo_kas = (float)($cash_data['saldo_kas'] ?? 0);
+
+/* ========================================
+   QUERY STATISTIK GLOBAL (INVESTASI AKTIF)
+======================================== */
+$sql_stats = "
+    SELECT 
+        COUNT(DISTINCT i.id) as total_portofolio,
+        COALESCE(SUM(i.jumlah), 0) as total_investasi,
+        COALESCE(SUM(ku_agg.total_keuntungan), 0) as total_keuntungan,
+        COALESCE(SUM(kr_agg.total_kerugian), 0) as total_kerugian,
+        (COALESCE(SUM(i.jumlah), 0) + COALESCE(SUM(ku_agg.total_keuntungan), 0) - COALESCE(SUM(kr_agg.total_kerugian), 0)) as total_nilai
+    FROM investasi i
+    LEFT JOIN (
+        SELECT investasi_id, SUM(jumlah_keuntungan) AS total_keuntungan
+        FROM keuntungan_investasi GROUP BY investasi_id
+    ) ku_agg ON i.id = ku_agg.investasi_id
+    LEFT JOIN (
+        SELECT investasi_id, SUM(jumlah_kerugian) AS total_kerugian
+        FROM kerugian_investasi GROUP BY investasi_id
+    ) kr_agg ON i.id = kr_agg.investasi_id
+    WHERE i.status = 'aktif'
+";
 $stmt_stats = $koneksi->query($sql_stats);
 $stats = $stmt_stats->fetch();
 
-// Ambil semua investasi dengan summary
+/* ========================================
+   QUERY INVESTASI (DENGAN STATUS)
+======================================== */
 $sql_investasi = "
     SELECT 
         i.id,
@@ -15,70 +49,72 @@ $sql_investasi = "
         i.jumlah as modal_investasi,
         i.tanggal_investasi,
         i.bukti_file,
+        i.status,
         k.nama_kategori,
-        COALESCE(SUM(ku.jumlah_keuntungan), 0) as total_keuntungan,
-        COALESCE(SUM(kr.jumlah_kerugian), 0) as total_kerugian,
-        (i.jumlah + COALESCE(SUM(ku.jumlah_keuntungan), 0) - COALESCE(SUM(kr.jumlah_kerugian), 0)) as nilai_sekarang,
+        COALESCE(ku_agg.total_keuntungan, 0) as total_keuntungan,
+        COALESCE(kr_agg.total_kerugian, 0) as total_kerugian,
+        (i.jumlah + COALESCE(ku_agg.total_keuntungan, 0) - COALESCE(kr_agg.total_kerugian, 0)) as nilai_sekarang,
         CASE 
-            WHEN i.jumlah > 0 THEN ((COALESCE(SUM(ku.jumlah_keuntungan), 0) - COALESCE(SUM(kr.jumlah_kerugian), 0)) / i.jumlah * 100)
+            WHEN i.jumlah > 0 THEN ((COALESCE(ku_agg.total_keuntungan, 0) - COALESCE(kr_agg.total_kerugian, 0)) / i.jumlah * 100)
             ELSE 0 
         END as roi_persen
     FROM investasi i
-    LEFT JOIN keuntungan_investasi ku ON i.id = ku.investasi_id
-    LEFT JOIN kerugian_investasi kr ON i.id = kr.investasi_id
     JOIN kategori k ON i.kategori_id = k.id
-    GROUP BY i.id, i.judul_investasi, i.deskripsi, i.jumlah, i.tanggal_investasi, i.bukti_file, k.nama_kategori
+    LEFT JOIN (
+        SELECT investasi_id, SUM(jumlah_keuntungan) AS total_keuntungan
+        FROM keuntungan_investasi GROUP BY investasi_id
+    ) ku_agg ON i.id = ku_agg.investasi_id
+    LEFT JOIN (
+        SELECT investasi_id, SUM(jumlah_kerugian) AS total_kerugian
+        FROM kerugian_investasi GROUP BY investasi_id
+    ) kr_agg ON i.id = kr_agg.investasi_id
     ORDER BY i.tanggal_investasi DESC
 ";
 $stmt_investasi = $koneksi->query($sql_investasi);
 $investasi_list = $stmt_investasi->fetchAll();
 
-// Ambil semua kategori untuk filter
+// Pisahkan investasi berdasarkan status
+$investasi_aktif = array_filter($investasi_list, fn($inv) => ($inv['status'] ?? 'aktif') === 'aktif');
+$investasi_terjual = array_filter($investasi_list, fn($inv) => ($inv['status'] ?? 'aktif') === 'terjual');
+
+// Hitung total nilai investasi aktif
+$total_nilai_investasi_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['nilai_sekarang'], 0);
+
+/* ========================================
+   HITUNG TOTAL ASET & ALOKASI
+======================================== */
+$total_aset = $saldo_kas + $total_nilai_investasi_aktif;
+$persentase_kas = $total_aset > 0 ? ($saldo_kas / $total_aset * 100) : 0;
+$persentase_investasi = $total_aset > 0 ? ($total_nilai_investasi_aktif / $total_aset * 100) : 0;
+
+/* ========================================
+   QUERY KATEGORI, KEUNTUNGAN, KERUGIAN
+======================================== */
 $sql_kategori = "SELECT * FROM kategori ORDER BY nama_kategori";
 $stmt_kategori = $koneksi->query($sql_kategori);
 $kategori_list = $stmt_kategori->fetchAll();
 
-// Ambil keuntungan terbaru (5 teratas) - DENGAN STATUS
 $sql_keuntungan = "
-    SELECT 
-        ki.id,
-        ki.judul_keuntungan,
-        ki.jumlah_keuntungan,
-        ki.tanggal_keuntungan,
-        ki.sumber_keuntungan,
-        ki.status,
-        i.judul_investasi,
-        k.nama_kategori
+    SELECT ki.*, i.judul_investasi, k.nama_kategori
     FROM keuntungan_investasi ki
     JOIN investasi i ON ki.investasi_id = i.id
     JOIN kategori k ON ki.kategori_id = k.id
-    ORDER BY ki.tanggal_keuntungan DESC
-    LIMIT 5
+    ORDER BY ki.tanggal_keuntungan DESC LIMIT 5
 ";
 $stmt_keuntungan = $koneksi->query($sql_keuntungan);
 $keuntungan_list = $stmt_keuntungan->fetchAll();
 
-// Ambil kerugian terbaru (5 teratas) - DENGAN STATUS
 $sql_kerugian = "
-    SELECT 
-        kr.id,
-        kr.judul_kerugian,
-        kr.jumlah_kerugian,
-        kr.tanggal_kerugian,
-        kr.sumber_kerugian,
-        kr.status,
-        i.judul_investasi,
-        k.nama_kategori
+    SELECT kr.*, i.judul_investasi, k.nama_kategori
     FROM kerugian_investasi kr
     JOIN investasi i ON kr.investasi_id = i.id
     JOIN kategori k ON kr.kategori_id = k.id
-    ORDER BY kr.tanggal_kerugian DESC
-    LIMIT 5
+    ORDER BY kr.tanggal_kerugian DESC LIMIT 5
 ";
 $stmt_kerugian = $koneksi->query($sql_kerugian);
 $kerugian_list = $stmt_kerugian->fetchAll();
 
-// Hitung ROI global
+// Hitung metrik
 $total_investasi = $stats['total_investasi'] ?? 0;
 $total_keuntungan = $stats['total_keuntungan'] ?? 0;
 $total_kerugian = $stats['total_kerugian'] ?? 0;
@@ -94,16 +130,10 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
     <meta name="description" content="Portofolio Investasi Pribadi - Muhammad Burhanudin Syaifullah Azmi">
     <meta name="author" content="SAAZ">
     <title>Portofolio Investasi - Shoutaverse Capital Group v3.0</title>
-    
-    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    
-    <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -111,16 +141,10 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
     <!-- Loading Screen -->
     <div class="loading-screen" id="loadingScreen">
         <div class="loading-content">
-            <div class="loading-logo">
-                <i class="fas fa-chart-line"></i>
-            </div>
-            <div class="loading-spinner">
-                <div class="spinner"></div>
-            </div>
+            <div class="loading-logo"><i class="fas fa-chart-line"></i></div>
+            <div class="loading-spinner"><div class="spinner"></div></div>
             <div class="loading-text">Memuat Portofolio...</div>
-            <div class="loading-progress">
-                <div class="progress-bar" id="loadingProgress"></div>
-            </div>
+            <div class="loading-progress"><div class="progress-bar" id="loadingProgress"></div></div>
         </div>
     </div>
 
@@ -131,7 +155,6 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
             <div class="gradient-orb orb-2"></div>
             <div class="gradient-orb orb-3"></div>
         </div>
-        
         <div class="container">
             <div class="header-content">
                 <div class="logo-section">
@@ -144,7 +167,6 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                         <p class="logo-subtitle">Portfolio Manager v3.0</p>
                     </div>
                 </div>
-                
                 <div class="header-info">
                     <h2 class="portfolio-title">
                         <span class="title-main">Portofolio Investasi Pribadi</span>
@@ -157,7 +179,6 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                 </div>
             </div>
         </div>
-        
         <div class="header-wave">
             <svg viewBox="0 0 1200 120" preserveAspectRatio="none">
                 <path d="M0,0V46.29c47.79,22.2,103.59,32.17,158,28,70.36-5.37,136.33-33.31,206.8-37.5C438.64,32.43,512.34,53.67,583,72.05c69.27,18,138.3,24.88,209.4,13.08,36.15-6,69.85-17.84,104.45-29.34C989.49,25,1113-14.29,1200,52.47V0Z" opacity=".25"></path>
@@ -171,68 +192,112 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
     <main class="main-content">
         <div class="container">
             
-            <!-- Statistics Cards -->
+            <!-- Statistics Cards (5 Cards: Kas, Investasi Aktif, Total Aset, Keuntungan, Kerugian) -->
             <section class="stats-section" data-aos="fade-up">
-                <div class="stats-grid">
-                    <div class="stat-card stat-primary">
-                        <div class="stat-icon">
-                            <i class="fas fa-wallet"></i>
-                        </div>
+                <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                    
+                    <!-- CARD 1: SALDO KAS -->
+                    <div class="stat-card stat-warning">
+                        <div class="stat-icon"><i class="fas fa-wallet"></i></div>
                         <div class="stat-content">
-                            <div class="stat-label">Total Investasi</div>
-                            <div class="stat-value" data-value="<?= $total_investasi ?>">
-                                <?= format_currency($total_investasi) ?>
-                            </div>
-                            <div class="stat-sublabel"><?= $stats['total_portofolio'] ?? 0 ?> Portofolio</div>
+                            <div class="stat-label">Saldo Kas</div>
+                            <div class="stat-value" data-value="<?= $saldo_kas ?>"><?= format_currency($saldo_kas) ?></div>
+                            <div class="stat-sublabel"><?= number_format($persentase_kas, 1) ?>% dari total aset</div>
                         </div>
                         <div class="stat-glow"></div>
                     </div>
 
-                    <div class="stat-card stat-success">
-                        <div class="stat-icon">
-                            <i class="fas fa-arrow-trend-up"></i>
+                    <!-- CARD 2: INVESTASI AKTIF -->
+                    <div class="stat-card stat-primary">
+                        <div class="stat-icon"><i class="fas fa-chart-line"></i></div>
+                        <div class="stat-content">
+                            <div class="stat-label">Investasi Aktif</div>
+                            <div class="stat-value" data-value="<?= $total_nilai_investasi_aktif ?>"><?= format_currency($total_nilai_investasi_aktif) ?></div>
+                            <div class="stat-sublabel"><?= count($investasi_aktif) ?> Portofolio Aktif</div>
                         </div>
+                        <div class="stat-glow"></div>
+                    </div>
+
+                    <!-- CARD 3: TOTAL ASET -->
+                    <div class="stat-card stat-purple">
+                        <div class="stat-icon"><i class="fas fa-coins"></i></div>
+                        <div class="stat-content">
+                            <div class="stat-label">Total Aset</div>
+                            <div class="stat-value highlight" data-value="<?= $total_aset ?>"><?= format_currency($total_aset) ?></div>
+                            <div class="stat-sublabel">Kas + Investasi</div>
+                        </div>
+                        <div class="stat-glow"></div>
+                    </div>
+
+                    <!-- CARD 4: KEUNTUNGAN -->
+                    <div class="stat-card stat-success">
+                        <div class="stat-icon"><i class="fas fa-arrow-trend-up"></i></div>
                         <div class="stat-content">
                             <div class="stat-label">Total Keuntungan</div>
-                            <div class="stat-value positive" data-value="<?= $total_keuntungan ?>">
-                                <?= format_currency($total_keuntungan) ?>
-                            </div>
-                            <div class="stat-sublabel"><?= $stats['total_transaksi_keuntungan'] ?? 0 ?> Transaksi</div>
+                            <div class="stat-value positive" data-value="<?= $total_keuntungan ?>"><?= format_currency($total_keuntungan) ?></div>
+                            <div class="stat-sublabel"><?= count($keuntungan_list) ?>+ Transaksi</div>
                         </div>
                         <div class="stat-glow"></div>
                     </div>
 
+                    <!-- CARD 5: KERUGIAN -->
                     <div class="stat-card stat-danger">
-                        <div class="stat-icon">
-                            <i class="fas fa-arrow-trend-down"></i>
-                        </div>
+                        <div class="stat-icon"><i class="fas fa-arrow-trend-down"></i></div>
                         <div class="stat-content">
                             <div class="stat-label">Total Kerugian</div>
-                            <div class="stat-value negative" data-value="<?= $total_kerugian ?>">
-                                <?= format_currency($total_kerugian) ?>
-                            </div>
-                            <div class="stat-sublabel"><?= $stats['total_transaksi_kerugian'] ?? 0 ?> Transaksi</div>
+                            <div class="stat-value negative" data-value="<?= $total_kerugian ?>"><?= format_currency($total_kerugian) ?></div>
+                            <div class="stat-sublabel"><?= count($kerugian_list) ?>+ Transaksi</div>
                         </div>
                         <div class="stat-glow"></div>
                     </div>
 
-                    <div class="stat-card stat-info">
-                        <div class="stat-icon">
-                            <i class="fas fa-chart-line"></i>
-                        </div>
-                        <div class="stat-content">
-                            <div class="stat-label">Total Nilai</div>
-                            <div class="stat-value" data-value="<?= $total_nilai ?>">
-                                <?= format_currency($total_nilai) ?>
+                </div>
+            </section>
+
+            <!-- Asset Allocation Section (BARU) -->
+            <section class="asset-allocation-section" data-aos="fade-up" data-aos-delay="50">
+                <div class="section-header">
+                    <h2 class="section-title"><i class="fas fa-chart-pie"></i> Alokasi Aset</h2>
+                </div>
+                <div class="allocation-container">
+                    <div class="allocation-chart">
+                        <div class="allocation-bar">
+                            <div class="bar-segment cash" style="width: <?= $persentase_kas ?>%" title="Kas: <?= format_currency($saldo_kas) ?>">
+                                <?php if ($persentase_kas > 15): ?>
+                                    <span class="bar-label">Kas <?= number_format($persentase_kas, 1) ?>%</span>
+                                <?php endif; ?>
                             </div>
-                            <div class="stat-sublabel">
-                                ROI: 
-                                <span class="<?= $roi_global >= 0 ? 'positive' : 'negative' ?>">
-                                    <?= number_format($roi_global, 2) ?>%
-                                </span>
+                            <div class="bar-segment investment" style="width: <?= $persentase_investasi ?>%" title="Investasi: <?= format_currency($total_nilai_investasi_aktif) ?>">
+                                <?php if ($persentase_investasi > 15): ?>
+                                    <span class="bar-label">Investasi <?= number_format($persentase_investasi, 1) ?>%</span>
+                                <?php endif; ?>
                             </div>
                         </div>
-                        <div class="stat-glow"></div>
+                    </div>
+                    <div class="allocation-legend">
+                        <div class="legend-item">
+                            <div class="legend-color cash"></div>
+                            <div class="legend-content">
+                                <span class="legend-label">Saldo Kas</span>
+                                <span class="legend-value"><?= format_currency($saldo_kas) ?></span>
+                                <span class="legend-percent"><?= number_format($persentase_kas, 1) ?>%</span>
+                            </div>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color investment"></div>
+                            <div class="legend-content">
+                                <span class="legend-label">Investasi Aktif</span>
+                                <span class="legend-value"><?= format_currency($total_nilai_investasi_aktif) ?></span>
+                                <span class="legend-percent"><?= number_format($persentase_investasi, 1) ?>%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="allocation-summary">
+                        <div class="summary-item"><i class="fas fa-coins"></i> <span>Total Aset: <strong><?= format_currency($total_aset) ?></strong></span></div>
+                        <div class="summary-item"><i class="fas fa-briefcase"></i> <span>Portfolio Aktif: <strong><?= count($investasi_aktif) ?></strong></span></div>
+                        <?php if (count($investasi_terjual) > 0): ?>
+                        <div class="summary-item"><i class="fas fa-history"></i> <span>Portfolio Terjual: <strong><?= count($investasi_terjual) ?></strong></span></div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </section>
@@ -240,52 +305,23 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
             <!-- Quick Analytics -->
             <section class="analytics-section" data-aos="fade-up" data-aos-delay="100">
                 <div class="section-header">
-                    <h2 class="section-title">
-                        <i class="fas fa-chart-pie"></i>
-                        Analisis Cepat
-                    </h2>
+                    <h2 class="section-title"><i class="fas fa-chart-pie"></i> Analisis Cepat</h2>
                 </div>
                 <div class="analytics-grid">
                     <div class="analytics-card">
-                        <div class="analytics-header">
-                            <h4>Net Profit</h4>
-                            <i class="fas fa-coins"></i>
-                        </div>
-                        <div class="analytics-value <?= $net_profit >= 0 ? 'positive' : 'negative' ?>">
-                            <?= format_currency($net_profit) ?>
-                        </div>
-                        <div class="analytics-footer">
-                            Keuntungan - Kerugian
-                        </div>
+                        <div class="analytics-header"><h4>Net Profit</h4><i class="fas fa-coins"></i></div>
+                        <div class="analytics-value <?= $net_profit >= 0 ? 'positive' : 'negative' ?>"><?= format_currency($net_profit) ?></div>
+                        <div class="analytics-footer">Keuntungan - Kerugian</div>
                     </div>
-
                     <div class="analytics-card">
-                        <div class="analytics-header">
-                            <h4>Performance</h4>
-                            <i class="fas fa-percent"></i>
-                        </div>
-                        <div class="analytics-value <?= $roi_global >= 0 ? 'positive' : 'negative' ?>">
-                            <?= number_format($roi_global, 2) ?>%
-                        </div>
-                        <div class="analytics-footer">
-                            Return on Investment
-                        </div>
+                        <div class="analytics-header"><h4>Performance</h4><i class="fas fa-percent"></i></div>
+                        <div class="analytics-value <?= $roi_global >= 0 ? 'positive' : 'negative' ?>"><?= number_format($roi_global, 2) ?>%</div>
+                        <div class="analytics-footer">Return on Investment</div>
                     </div>
-
                     <div class="analytics-card">
-                        <div class="analytics-header">
-                            <h4>Profit Ratio</h4>
-                            <i class="fas fa-chart-bar"></i>
-                        </div>
-                        <div class="analytics-value info">
-                            <?php 
-                            $profit_ratio = $total_nilai > 0 ? ($total_keuntungan / $total_nilai * 100) : 0;
-                            echo number_format($profit_ratio, 2);
-                            ?>%
-                        </div>
-                        <div class="analytics-footer">
-                            Keuntungan / Total Nilai
-                        </div>
+                        <div class="analytics-header"><h4>Profit Ratio</h4><i class="fas fa-chart-bar"></i></div>
+                        <div class="analytics-value info"><?= $total_nilai > 0 ? number_format($total_keuntungan / $total_nilai * 100, 2) : 0 ?>%</div>
+                        <div class="analytics-footer">Keuntungan / Total Nilai</div>
                     </div>
                 </div>
             </section>
@@ -293,140 +329,100 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
             <!-- Recent Transactions -->
             <section class="transactions-section" data-aos="fade-up" data-aos-delay="200">
                 <div class="transactions-container">
-                    <!-- Keuntungan Terbaru -->
                     <div class="transaction-column">
-                        <div class="transaction-header">
-                            <h3><i class="fas fa-arrow-up"></i> Keuntungan Terbaru</h3>
-                        </div>
+                        <div class="transaction-header"><h3><i class="fas fa-arrow-up"></i> Keuntungan Terbaru</h3></div>
                         <div class="transaction-list">
-                            <?php if (count($keuntungan_list) > 0): ?>
-                                <?php foreach ($keuntungan_list as $profit): ?>
-                                    <?php 
-                                    $isRealized = ($profit['status'] === 'realized');
-                                    $statusClass = $isRealized ? 'realized' : 'unrealized';
-                                    ?>
-                                    <div class="transaction-item profit-item <?= $statusClass ?>">
-                                        <div class="transaction-icon">
-                                            <i class="fas fa-plus-circle"></i>
-                                        </div>
-                                        <div class="transaction-content">
-                                            <div class="transaction-header-row">
-                                                <h4><?= htmlspecialchars($profit['judul_keuntungan']) ?></h4>
-                                                <span class="status-badge <?= $statusClass ?>">
-                                                    <i class="fas fa-<?= $isRealized ? 'check-circle' : 'clock' ?>"></i>
-                                                    <?= $isRealized ? 'Realized' : 'Unrealized' ?>
-                                                </span>
-                                            </div>
-                                            <p><?= htmlspecialchars($profit['judul_investasi']) ?></p>
-                                            <span class="transaction-badge"><?= ucfirst(str_replace('_', ' ', $profit['sumber_keuntungan'])) ?></span>
-                                        </div>
-                                        <div class="transaction-amount positive">
-                                            +<?= format_currency($profit['jumlah_keuntungan']) ?>
-                                        </div>
-                                        <div class="transaction-date">
-                                            <?= date('d M Y', strtotime($profit['tanggal_keuntungan'])) ?>
-                                        </div>
+                            <?php if (count($keuntungan_list) > 0): foreach ($keuntungan_list as $profit): 
+                                $isRealized = ($profit['status'] === 'realized');
+                                $statusClass = $isRealized ? 'realized' : 'unrealized';
+                            ?>
+                            <div class="transaction-item profit-item <?= $statusClass ?>">
+                                <div class="transaction-icon"><i class="fas fa-plus-circle"></i></div>
+                                <div class="transaction-content">
+                                    <div class="transaction-header-row">
+                                        <h4><?= htmlspecialchars($profit['judul_keuntungan']) ?></h4>
+                                        <span class="status-badge <?= $statusClass ?>">
+                                            <i class="fas fa-<?= $isRealized ? 'check-circle' : 'clock' ?>"></i>
+                                            <?= $isRealized ? 'Realized' : 'Unrealized' ?>
+                                        </span>
                                     </div>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <div class="empty-state">
-                                    <i class="fas fa-inbox"></i>
-                                    <p>Belum ada data keuntungan</p>
+                                    <p><?= htmlspecialchars($profit['judul_investasi']) ?></p>
+                                    <span class="transaction-badge"><?= ucfirst(str_replace('_', ' ', $profit['sumber_keuntungan'])) ?></span>
                                 </div>
+                                <div class="transaction-amount positive">+<?= format_currency($profit['jumlah_keuntungan']) ?></div>
+                                <div class="transaction-date"><?= date('d M Y', strtotime($profit['tanggal_keuntungan'])) ?></div>
+                            </div>
+                            <?php endforeach; else: ?>
+                            <div class="empty-state"><i class="fas fa-inbox"></i><p>Belum ada data keuntungan</p></div>
                             <?php endif; ?>
                         </div>
                     </div>
-
-                    <!-- Kerugian Terbaru -->
                     <div class="transaction-column">
-                        <div class="transaction-header">
-                            <h3><i class="fas fa-arrow-down"></i> Kerugian Terbaru</h3>
-                        </div>
+                        <div class="transaction-header"><h3><i class="fas fa-arrow-down"></i> Kerugian Terbaru</h3></div>
                         <div class="transaction-list">
-                            <?php if (count($kerugian_list) > 0): ?>
-                                <?php foreach ($kerugian_list as $loss): ?>
-                                    <?php 
-                                    $isRealized = ($loss['status'] === 'realized');
-                                    $statusClass = $isRealized ? 'realized' : 'unrealized';
-                                    ?>
-                                    <div class="transaction-item loss-item <?= $statusClass ?>">
-                                        <div class="transaction-icon">
-                                            <i class="fas fa-minus-circle"></i>
-                                        </div>
-                                        <div class="transaction-content">
-                                            <div class="transaction-header-row">
-                                                <h4><?= htmlspecialchars($loss['judul_kerugian']) ?></h4>
-                                                <span class="status-badge <?= $statusClass ?>">
-                                                    <i class="fas fa-<?= $isRealized ? 'check-circle' : 'clock' ?>"></i>
-                                                    <?= $isRealized ? 'Realized' : 'Unrealized' ?>
-                                                </span>
-                                            </div>
-                                            <p><?= htmlspecialchars($loss['judul_investasi']) ?></p>
-                                            <span class="transaction-badge"><?= ucfirst(str_replace('_', ' ', $loss['sumber_kerugian'])) ?></span>
-                                        </div>
-                                        <div class="transaction-amount negative">
-                                            -<?= format_currency($loss['jumlah_kerugian']) ?>
-                                        </div>
-                                        <div class="transaction-date">
-                                            <?= date('d M Y', strtotime($loss['tanggal_kerugian'])) ?>
-                                        </div>
+                            <?php if (count($kerugian_list) > 0): foreach ($kerugian_list as $loss):
+                                $isRealized = ($loss['status'] === 'realized');
+                                $statusClass = $isRealized ? 'realized' : 'unrealized';
+                            ?>
+                            <div class="transaction-item loss-item <?= $statusClass ?>">
+                                <div class="transaction-icon"><i class="fas fa-minus-circle"></i></div>
+                                <div class="transaction-content">
+                                    <div class="transaction-header-row">
+                                        <h4><?= htmlspecialchars($loss['judul_kerugian']) ?></h4>
+                                        <span class="status-badge <?= $statusClass ?>">
+                                            <i class="fas fa-<?= $isRealized ? 'check-circle' : 'clock' ?>"></i>
+                                            <?= $isRealized ? 'Realized' : 'Unrealized' ?>
+                                        </span>
                                     </div>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <div class="empty-state">
-                                    <i class="fas fa-inbox"></i>
-                                    <p>Belum ada data kerugian</p>
+                                    <p><?= htmlspecialchars($loss['judul_investasi']) ?></p>
+                                    <span class="transaction-badge"><?= ucfirst(str_replace('_', ' ', $loss['sumber_kerugian'])) ?></span>
                                 </div>
+                                <div class="transaction-amount negative">-<?= format_currency($loss['jumlah_kerugian']) ?></div>
+                                <div class="transaction-date"><?= date('d M Y', strtotime($loss['tanggal_kerugian'])) ?></div>
+                            </div>
+                            <?php endforeach; else: ?>
+                            <div class="empty-state"><i class="fas fa-inbox"></i><p>Belum ada data kerugian</p></div>
                             <?php endif; ?>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <!-- Portfolio Controls -->
+            <!-- Portfolio Controls (TAMBAH FILTER STATUS) -->
             <section class="portfolio-controls" data-aos="fade-up" data-aos-delay="300">
                 <div class="controls-header">
-                    <h2 class="section-title">
-                        <i class="fas fa-briefcase"></i>
-                        Daftar Investasi
-                    </h2>
+                    <h2 class="section-title"><i class="fas fa-briefcase"></i> Daftar Investasi</h2>
                     <div class="view-toggle">
-                        <button class="toggle-btn active" data-view="grid" title="Grid View">
-                            <i class="fas fa-th"></i>
-                        </button>
-                        <button class="toggle-btn" data-view="list" title="List View">
-                            <i class="fas fa-list"></i>
-                        </button>
+                        <button class="toggle-btn active" data-view="grid" title="Grid View"><i class="fas fa-th"></i></button>
+                        <button class="toggle-btn" data-view="list" title="List View"><i class="fas fa-list"></i></button>
                     </div>
                 </div>
-
                 <div class="controls-filters">
-                    <!-- Search -->
                     <div class="search-container">
                         <i class="fas fa-search"></i>
                         <input type="text" id="searchInput" class="search-input" placeholder="Cari investasi...">
                     </div>
-
-                    <!-- Category Filter -->
                     <div class="filter-group">
-                        <label for="categoryFilter">
-                            <i class="fas fa-filter"></i> Kategori
-                        </label>
+                        <label for="categoryFilter"><i class="fas fa-filter"></i> Kategori</label>
                         <select id="categoryFilter" class="filter-select">
                             <option value="all">Semua Kategori</option>
                             <?php foreach ($kategori_list as $kat): ?>
-                                <option value="<?= htmlspecialchars($kat['nama_kategori']) ?>">
-                                    <?= htmlspecialchars($kat['nama_kategori']) ?>
-                                </option>
+                            <option value="<?= htmlspecialchars($kat['nama_kategori']) ?>"><?= htmlspecialchars($kat['nama_kategori']) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
-
-                    <!-- Sort -->
                     <div class="filter-group">
-                        <label for="sortSelect">
-                            <i class="fas fa-sort"></i> Urutkan
-                        </label>
+                        <label for="statusFilter"><i class="fas fa-toggle-on"></i> Status</label>
+                        <select id="statusFilter" class="filter-select">
+                            <option value="all">Semua Status</option>
+                            <option value="aktif" selected>Aktif</option>
+                            <option value="terjual">Terjual</option>
+                            <option value="rugi_total">Rugi Total</option>
+                            <option value="ditutup">Ditutup</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="sortSelect"><i class="fas fa-sort"></i> Urutkan</label>
                         <select id="sortSelect" class="filter-select">
                             <option value="date-desc">Terbaru</option>
                             <option value="date-asc">Terlama</option>
@@ -439,87 +435,90 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                 </div>
             </section>
 
-            <!-- Investment Grid -->
+            <!-- Investment Grid (TAMBAH STATUS BADGE) -->
             <section class="investments-section" data-aos="fade-up" data-aos-delay="400">
                 <?php if (count($investasi_list) > 0): ?>
-                    <div class="investments-grid" id="investmentsGrid">
-                        <?php foreach ($investasi_list as $index => $item): ?>
-                            <div class="investment-card" 
-                                 data-category="<?= htmlspecialchars($item['nama_kategori']) ?>"
-                                 data-amount="<?= $item['modal_investasi'] ?>"
-                                 data-date="<?= $item['tanggal_investasi'] ?>"
-                                 data-title="<?= htmlspecialchars($item['judul_investasi']) ?>"
-                                 data-roi="<?= $item['roi_persen'] ?>"
-                                 style="animation-delay: <?= $index * 0.05 ?>s">
-                                
-                                <div class="card-glow"></div>
-                                
-                                <div class="card-header">
-                                    <div class="card-icon">
-                                        <i class="fas fa-chart-area"></i>
-                                    </div>
-                                    <div class="category-badge">
-                                        <i class="fas fa-tag"></i>
-                                        <?= htmlspecialchars($item['nama_kategori']) ?>
-                                    </div>
+                <div class="investments-grid" id="investmentsGrid">
+                    <?php foreach ($investasi_list as $index => $item): 
+                        $status = $item['status'] ?? 'aktif';
+                        $statusConfig = [
+                            'aktif' => ['icon' => 'check-circle', 'label' => 'Aktif', 'class' => 'status-active'],
+                            'terjual' => ['icon' => 'handshake', 'label' => 'Terjual', 'class' => 'status-sold'],
+                            'rugi_total' => ['icon' => 'times-circle', 'label' => 'Rugi Total', 'class' => 'status-loss'],
+                            'ditutup' => ['icon' => 'ban', 'label' => 'Ditutup', 'class' => 'status-closed']
+                        ];
+                        $config = $statusConfig[$status] ?? $statusConfig['aktif'];
+                    ?>
+                    <div class="investment-card" 
+                         data-category="<?= htmlspecialchars($item['nama_kategori']) ?>"
+                         data-amount="<?= $item['modal_investasi'] ?>"
+                         data-date="<?= $item['tanggal_investasi'] ?>"
+                         data-title="<?= htmlspecialchars($item['judul_investasi']) ?>"
+                         data-roi="<?= $item['roi_persen'] ?>"
+                         data-status="<?= $status ?>"
+                         style="animation-delay: <?= $index * 0.05 ?>s">
+                        <div class="card-glow"></div>
+                        <div class="card-header">
+                            <div class="card-icon"><i class="fas fa-chart-area"></i></div>
+                            <div class="header-badges">
+                                <div class="category-badge">
+                                    <i class="fas fa-tag"></i>
+                                    <?= htmlspecialchars($item['nama_kategori']) ?>
                                 </div>
-
-                                <div class="card-body">
-                                    <h3 class="card-title"><?= htmlspecialchars($item['judul_investasi']) ?></h3>
-                                    
-                                    <?php if (!empty($item['deskripsi'])): ?>
-                                        <p class="card-description"><?= nl2br(htmlspecialchars($item['deskripsi'])) ?></p>
-                                    <?php endif; ?>
-
-                                    <div class="card-stats">
-                                        <div class="stat-item">
-                                            <span class="stat-label">Modal</span>
-                                            <span class="stat-value"><?= format_currency($item['modal_investasi']) ?></span>
-                                        </div>
-                                        <div class="stat-item">
-                                            <span class="stat-label">Nilai Sekarang</span>
-                                            <span class="stat-value"><?= format_currency($item['nilai_sekarang']) ?></span>
-                                        </div>
-                                        <div class="stat-item">
-                                            <span class="stat-label">Keuntungan</span>
-                                            <span class="stat-value positive">+<?= format_currency($item['total_keuntungan']) ?></span>
-                                        </div>
-                                        <div class="stat-item">
-                                            <span class="stat-label">Kerugian</span>
-                                            <span class="stat-value negative">-<?= format_currency($item['total_kerugian']) ?></span>
-                                        </div>
-                                    </div>
-
-                                    <div class="card-roi">
-                                        <span class="roi-label">ROI</span>
-                                        <span class="roi-value <?= $item['roi_persen'] >= 0 ? 'positive' : 'negative' ?>">
-                                            <?= number_format($item['roi_persen'], 2) ?>%
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div class="card-footer">
-                                    <div class="card-date">
-                                        <i class="fas fa-calendar-alt"></i>
-                                        <?= date('d M Y', strtotime($item['tanggal_investasi'])) ?>
-                                    </div>
-                                    <button class="btn-detail" 
-                                            onclick="showInvestmentDetail(<?= $item['id'] ?>)"
-                                            data-id="<?= $item['id'] ?>">
-                                        <i class="fas fa-eye"></i> Detail
-                                    </button>
+                                <div class="status-badge <?= $config['class'] ?>">
+                                    <i class="fas fa-<?= $config['icon'] ?>"></i>
+                                    <?= $config['label'] ?>
                                 </div>
                             </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else: ?>
-                    <div class="empty-portfolio" data-aos="fade-up">
-                        <div class="empty-icon">
-                            <i class="fas fa-folder-open"></i>
                         </div>
-                        <h3>Belum Ada Investasi</h3>
-                        <p>Data investasi akan muncul di sini setelah ditambahkan</p>
+                        <div class="card-body">
+                            <h3 class="card-title"><?= htmlspecialchars($item['judul_investasi']) ?></h3>
+                            <?php if (!empty($item['deskripsi'])): ?>
+                            <p class="card-description"><?= nl2br(htmlspecialchars($item['deskripsi'])) ?></p>
+                            <?php endif; ?>
+                            <div class="card-stats">
+                                <div class="stat-item">
+                                    <span class="stat-label">Modal</span>
+                                    <span class="stat-value"><?= format_currency($item['modal_investasi']) ?></span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Nilai Sekarang</span>
+                                    <span class="stat-value"><?= format_currency($item['nilai_sekarang']) ?></span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Keuntungan</span>
+                                    <span class="stat-value positive">+<?= format_currency($item['total_keuntungan']) ?></span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Kerugian</span>
+                                    <span class="stat-value negative">-<?= format_currency($item['total_kerugian']) ?></span>
+                                </div>
+                            </div>
+                            <div class="card-roi">
+                                <span class="roi-label">ROI</span>
+                                <span class="roi-value <?= $item['roi_persen'] >= 0 ? 'positive' : 'negative' ?>">
+                                    <?= number_format($item['roi_persen'], 2) ?>%
+                                </span>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <div class="card-date">
+                                <i class="fas fa-calendar-alt"></i>
+                                <?= date('d M Y', strtotime($item['tanggal_investasi'])) ?>
+                            </div>
+                            <button class="btn-detail" onclick="showInvestmentDetail(<?= $item['id'] ?>)">
+                                <i class="fas fa-eye"></i> Detail
+                            </button>
+                        </div>
                     </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php else: ?>
+                <div class="empty-portfolio" data-aos="fade-up">
+                    <div class="empty-icon"><i class="fas fa-folder-open"></i></div>
+                    <h3>Belum Ada Investasi</h3>
+                    <p>Data investasi akan muncul di sini setelah ditambahkan</p>
+                </div>
                 <?php endif; ?>
             </section>
 
@@ -543,11 +542,8 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                         <span>Shoutaverse Capital Group</span>
                     </div>
                     <p class="footer-tagline">Investment Portfolio Manager v3.0</p>
-                    <p class="footer-copyright">
-                        &copy; <?= date('Y') ?> Muhammad Burhanudin Syaifullah Azmi. All rights reserved.
-                    </p>
+                    <p class="footer-copyright">&copy; <?= date('Y') ?> Muhammad Burhanudin Syaifullah Azmi. All rights reserved.</p>
                 </div>
-
                 <div class="footer-links">
                     <div class="footer-column">
                         <h4>Navigasi</h4>
@@ -557,18 +553,14 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                             <li><a href="#portfolio"><i class="fas fa-briefcase"></i> Portofolio</a></li>
                         </ul>
                     </div>
-
                     <div class="footer-column">
                         <h4>Tools</h4>
                         <ul>
-                            <li><a href="https://kalkulasiinvest.netlify.app/" target="_blank">
-                                <i class="fas fa-calculator"></i> Kalkulator ROI
-                            </a></li>
+                            <li><a href="https://kalkulasiinvest.netlify.app/" target="_blank"><i class="fas fa-calculator"></i> Kalkulator ROI</a></li>
                             <li><a href="#"><i class="fas fa-chart-pie"></i> Analisis</a></li>
                             <li><a href="#"><i class="fas fa-file-export"></i> Export Data</a></li>
                         </ul>
                     </div>
-
                     <div class="footer-column">
                         <h4>Support</h4>
                         <ul>
@@ -577,13 +569,9 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                             <li><a href="#"><i class="fas fa-envelope"></i> Kontak</a></li>
                         </ul>
                     </div>
-
                     <div class="footer-column">
                         <h4>Info</h4>
-                        <p class="footer-info">
-                            <i class="fas fa-info-circle"></i>
-                            Platform ini digunakan untuk mencatat dan memantau portofolio investasi pribadi secara real-time.
-                        </p>
+                        <p class="footer-info"><i class="fas fa-info-circle"></i> Platform ini digunakan untuk mencatat dan memantau portofolio investasi pribadi secara real-time.</p>
                         <div class="footer-stats">
                             <span><i class="fas fa-database"></i> <?= count($investasi_list) ?> Investasi</span>
                             <span><i class="fas fa-chart-line"></i> <?= count($keuntungan_list) ?> Profit</span>
@@ -591,7 +579,6 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                     </div>
                 </div>
             </div>
-
             <div class="footer-bottom">
                 <div class="footer-social">
                     <a href="#" aria-label="GitHub"><i class="fab fa-github"></i></a>
@@ -600,37 +587,26 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                     <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
                 </div>
                 <div class="footer-version">
-                    <span class="version-badge">
-                        <i class="fas fa-code-branch"></i> Version 3.0.0
-                    </span>
-                    <span class="update-info">
-                        <i class="fas fa-clock"></i> Updated: <?= date('d M Y') ?>
-                    </span>
+                    <span class="version-badge"><i class="fas fa-code-branch"></i> Version 3.0.0</span>
+                    <span class="update-info"><i class="fas fa-clock"></i> Updated: <?= date('d M Y') ?></span>
                 </div>
             </div>
         </div>
     </footer>
 
-    <!-- Scroll to Top Button -->
-    <button class="scroll-to-top" id="scrollToTop" aria-label="Scroll to top">
-        <i class="fas fa-arrow-up"></i>
-    </button>
+    <!-- Scroll to Top -->
+    <button class="scroll-to-top" id="scrollToTop" aria-label="Scroll to top"><i class="fas fa-arrow-up"></i></button>
 
-    <!-- Investment Detail Modal -->
+    <!-- Modal -->
     <div class="modal" id="investmentModal">
         <div class="modal-overlay" onclick="closeModal()"></div>
         <div class="modal-content">
             <div class="modal-header">
                 <h3 id="modalTitle">Detail Investasi</h3>
-                <button class="modal-close" onclick="closeModal()">
-                    <i class="fas fa-times"></i>
-                </button>
+                <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body" id="modalBody">
-                <div class="modal-loading">
-                    <div class="spinner"></div>
-                    <p>Memuat detail...</p>
-                </div>
+                <div class="modal-loading"><div class="spinner"></div><p>Memuat detail...</p></div>
             </div>
         </div>
     </div>
@@ -638,38 +614,29 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
     <!-- Scripts -->
     <script src="assets/js/landing.js"></script>
     <script>
-    // ---------- Loading Screen ----------
     window.addEventListener('load', function () {
         const loadingScreen = document.getElementById('loadingScreen');
         const progressBar = document.getElementById('loadingProgress');
-
         let progress = 0;
         const interval = setInterval(() => {
             progress += 10;
             progressBar.style.width = progress + '%';
-
             if (progress >= 100) {
                 clearInterval(interval);
                 setTimeout(() => {
                     loadingScreen.classList.add('fade-out');
-                    setTimeout(() => {
-                        loadingScreen.style.display = 'none';
-                    }, 500);
+                    setTimeout(() => loadingScreen.style.display = 'none', 500);
                 }, 300);
             }
         }, 50);
     });
 
-    // ---------- View Toggle ----------
     document.querySelectorAll('.toggle-btn').forEach(btn => {
         btn.addEventListener('click', function () {
             document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
-
-            const view = this.dataset.view;
             const grid = document.getElementById('investmentsGrid');
-
-            if (view === 'list') {
+            if (this.dataset.view === 'list') {
                 grid.classList.add('list-view');
                 grid.classList.remove('grid-view');
             } else {
@@ -679,30 +646,31 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
         });
     });
 
-    // ---------- Filter & Sort ----------
     document.getElementById('searchInput').addEventListener('input', filterInvestments);
     document.getElementById('categoryFilter').addEventListener('change', filterInvestments);
+    document.getElementById('statusFilter').addEventListener('change', filterInvestments);
     document.getElementById('sortSelect').addEventListener('change', e => sortInvestments(e.target.value));
 
     function filterInvestments() {
         const keyword = document.getElementById('searchInput').value.toLowerCase();
         const category = document.getElementById('categoryFilter').value;
+        const status = document.getElementById('statusFilter').value;
         const cards = document.querySelectorAll('.investment-card');
 
         cards.forEach(card => {
             const title = card.dataset.title.toLowerCase();
             const cardCategory = card.dataset.category;
+            const cardStatus = card.dataset.status || 'aktif';
             const matchSearch = title.includes(keyword);
             const matchCategory = category === 'all' || cardCategory === category;
-
-            card.style.display = matchSearch && matchCategory ? 'block' : 'none';
+            const matchStatus = status === 'all' || cardStatus === status;
+            card.style.display = matchSearch && matchCategory && matchStatus ? 'block' : 'none';
         });
     }
 
     function sortInvestments(sortBy) {
         const grid = document.getElementById('investmentsGrid');
         const cards = Array.from(grid.querySelectorAll('.investment-card'));
-
         cards.sort((a, b) => {
             switch (sortBy) {
                 case 'date-desc': return new Date(b.dataset.date) - new Date(a.dataset.date);
@@ -714,106 +682,66 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                 default: return 0;
             }
         });
-
         cards.forEach(card => grid.appendChild(card));
     }
 
-    // ---------- Scroll to Top ----------
     const scrollBtn = document.getElementById('scrollToTop');
-    window.addEventListener('scroll', () => {
-        scrollBtn.classList.toggle('show', window.pageYOffset > 300);
-    });
+    window.addEventListener('scroll', () => scrollBtn.classList.toggle('show', window.pageYOffset > 300));
     scrollBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 
-    // ---------- Modal ----------
     function showInvestmentDetail(id) {
         const modal = document.getElementById('investmentModal');
         const modalBody = document.getElementById('modalBody');
         modal.classList.add('show');
         document.body.style.overflow = 'hidden';
-
         fetch(`get_investment_detail.php?id=${id}`)
             .then(res => res.json())
             .then(data => {
-                if (data.success) {
-                    displayInvestmentDetail(data.investment);
-                } else {
-                    modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>${data.message}</p></div>`;
-                }
+                if (data.success) displayInvestmentDetail(data.investment);
+                else modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>${data.message}</p></div>`;
             })
-            .catch(() => {
-                modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>Terjadi kesalahan saat memuat data</p></div>`;
-            });
+            .catch(() => modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>Terjadi kesalahan</p></div>`);
     }
 
     function closeModal() {
-        const modal = document.getElementById('investmentModal');
-        modal.classList.remove('show');
+        document.getElementById('investmentModal').classList.remove('show');
         document.body.style.overflow = '';
     }
     document.addEventListener('keydown', e => e.key === 'Escape' && closeModal());
 
-    // ---------- Render Detail with Realized/Unrealized Status ----------
     function displayInvestmentDetail(inv) {
         const modalBody = document.getElementById('modalBody');
-
         const buktiBlock = (data) => {
             if (!data) return `<div class="detail-no-image"><i class="fas fa-image"></i><p>Tidak ada bukti</p></div>`;
             const { preview_url, is_image, is_pdf, original_name, size_formatted } = data;
             if (is_image) return `<div class="detail-image"><img src="${preview_url}" alt="Bukti" loading="lazy"><p class="file-meta">${original_name} • ${size_formatted}</p></div>`;
             if (is_pdf) return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-file-pdf"></i> Lihat PDF – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
-            return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-paperclip"></i> Unduh Lampiran – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
+            return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-paperclip"></i> Unduh – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
         };
-
-        const statusBadge = (status) => {
-            const isRealized = (status === 'realized');
-            return isRealized 
-                ? '<span class="status-badge realized"><i class="fas fa-check-circle"></i> Realized</span>'
-                : '<span class="status-badge unrealized"><i class="fas fa-clock"></i> Unrealized</span>';
-        };
-
+        const statusBadge = (status) => status === 'realized' 
+            ? '<span class="status-badge realized"><i class="fas fa-check-circle"></i> Realized</span>'
+            : '<span class="status-badge unrealized"><i class="fas fa-clock"></i> Unrealized</span>';
         const investProof = buktiBlock(inv.bukti_data);
-
-        const profitRows = inv.keuntungan.map(k => {
-            const isRealized = (k.status === 'realized');
-            const statusClass = isRealized ? 'realized' : 'unrealized';
-            return `
-            <div class="detail-transaction profit ${statusClass}">
+        const profitRows = inv.keuntungan.map(k => `
+            <div class="detail-transaction profit ${k.status === 'realized' ? 'realized' : 'unrealized'}">
                 <div class="transaction-status-header">
-                    <div class="transaction-info">
-                        <strong>${k.judul_keuntungan}</strong>
-                        <span>${k.tanggal_keuntungan_formatted}</span>
-                    </div>
+                    <div class="transaction-info"><strong>${k.judul_keuntungan}</strong><span>${k.tanggal_keuntungan_formatted}</span></div>
                     ${statusBadge(k.status)}
                 </div>
                 <div class="transaction-amount positive">+${k.jumlah_keuntungan_formatted}</div>
-                <div style="margin-top: 8px;">
-                    <small style="color: #6b7280;">Sumber: ${k.sumber_keuntungan.replace(/_/g, ' ')}</small>
-                </div>
+                <div style="margin-top: 8px;"><small style="color: #6b7280;">Sumber: ${k.sumber_keuntungan.replace(/_/g, ' ')}</small></div>
                 ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
-            </div>`;
-        }).join('');
-
-        const lossRows = inv.kerugian.map(k => {
-            const isRealized = (k.status === 'realized');
-            const statusClass = isRealized ? 'realized' : 'unrealized';
-            return `
-            <div class="detail-transaction loss ${statusClass}">
+            </div>`).join('');
+        const lossRows = inv.kerugian.map(k => `
+            <div class="detail-transaction loss ${k.status === 'realized' ? 'realized' : 'unrealized'}">
                 <div class="transaction-status-header">
-                    <div class="transaction-info">
-                        <strong>${k.judul_kerugian}</strong>
-                        <span>${k.tanggal_kerugian_formatted}</span>
-                    </div>
+                    <div class="transaction-info"><strong>${k.judul_kerugian}</strong><span>${k.tanggal_kerugian_formatted}</span></div>
                     ${statusBadge(k.status)}
                 </div>
                 <div class="transaction-amount negative">-${k.jumlah_kerugian_formatted}</div>
-                <div style="margin-top: 8px;">
-                    <small style="color: #6b7280;">Sumber: ${k.sumber_kerugian.replace(/_/g, ' ')}</small>
-                </div>
+                <div style="margin-top: 8px;"><small style="color: #6b7280;">Sumber: ${k.sumber_kerugian.replace(/_/g, ' ')}</small></div>
                 ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
-            </div>`;
-        }).join('');
-
+            </div>`).join('');
         modalBody.innerHTML = `
             <div class="detail-container">
                 ${investProof}
@@ -826,7 +754,6 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                             <div class="detail-item"><span class="detail-label">Tanggal</span><span class="detail-value">${inv.tanggal_investasi_formatted}</span></div>
                         </div>
                     </div>
-
                     <div class="detail-section">
                         <h4><i class="fas fa-wallet"></i> Informasi Keuangan</h4>
                         <div class="detail-grid">
@@ -837,42 +764,27 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                             <div class="detail-item"><span class="detail-label">ROI</span><span class="detail-value ${inv.roi_persen >= 0 ? 'positive' : 'negative'}">${inv.roi_persen}%</span></div>
                         </div>
                     </div>
-
                     ${inv.deskripsi ? `<div class="detail-section"><h4><i class="fas fa-align-left"></i> Deskripsi</h4><p class="detail-description">${inv.deskripsi}</p></div>` : ''}
-
                     ${inv.keuntungan.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-up"></i> Riwayat Keuntungan (${inv.keuntungan.length})</h4><div class="detail-transactions">${profitRows}</div></div>` : ''}
-
                     ${inv.kerugian.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-down"></i> Riwayat Kerugian (${inv.kerugian.length})</h4><div class="detail-transactions">${lossRows}</div></div>` : ''}
                 </div>
             </div>`;
     }
 
-    // ---------- AOS (Animate on Scroll) ----------
     const observer = new IntersectionObserver(entries => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) entry.target.classList.add('aos-animate');
-        });
+        entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('aos-animate'); });
     }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
     document.querySelectorAll('[data-aos]').forEach(el => observer.observe(el));
 
-    // ---------- Counter Animation ----------
     function animateCounter(el) {
         const target = parseFloat(el.dataset.value);
         const duration = 2000;
         const increment = target / (duration / 16);
         let current = 0;
-
         const timer = setInterval(() => {
             current += increment;
-            if (current >= target) {
-                current = target;
-                clearInterval(timer);
-            }
-            el.textContent = new Intl.NumberFormat('id-ID', {
-                style: 'currency',
-                currency: 'IDR',
-                minimumFractionDigits: 2
-            }).format(current);
+            if (current >= target) { current = target; clearInterval(timer); }
+            el.textContent = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 2 }).format(current);
         }, 16);
     }
 
@@ -884,7 +796,6 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
             }
         });
     }, { threshold: 0.5 });
-
     document.querySelectorAll('.stat-value[data-value]').forEach(el => counterObserver.observe(el));
     </script>
 </body>

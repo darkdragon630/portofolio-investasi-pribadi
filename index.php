@@ -59,6 +59,24 @@ $total_keuntungan_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $ca
 $total_kerugian_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['total_kerugian'], 0);
 $total_nilai_investasi_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['nilai_sekarang'], 0);
 
+// Hitung breakdown per kategori
+$breakdown_kategori = [];
+foreach ($investasi_aktif as $inv) {
+    $kategori = $inv['nama_kategori'];
+    if (!isset($breakdown_kategori[$kategori])) {
+        $breakdown_kategori[$kategori] = [
+            'jumlah' => 0,
+            'nilai' => 0,
+            'count' => 0
+        ];
+    }
+    $breakdown_kategori[$kategori]['nilai'] += $inv['nilai_sekarang'];
+    $breakdown_kategori[$kategori]['count']++;
+}
+
+// Urutkan berdasarkan nilai terbesar
+uasort($breakdown_kategori, fn($a, $b) => $b['nilai'] - $a['nilai']);
+
 /* ========================================
    HITUNG TOTAL ASET & ALOKASI
 ======================================== */

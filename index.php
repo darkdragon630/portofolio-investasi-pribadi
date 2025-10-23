@@ -15,30 +15,6 @@ $cash_data = $stmt_cash->fetch();
 $saldo_kas = (float)($cash_data['saldo_kas'] ?? 0);
 
 /* ========================================
-   QUERY STATISTIK GLOBAL (INVESTASI AKTIF)
-======================================== */
-$sql_stats = "
-    SELECT 
-        COUNT(DISTINCT i.id) as total_portofolio,
-        COALESCE(SUM(i.jumlah), 0) as total_investasi,
-        COALESCE(SUM(ku_agg.total_keuntungan), 0) as total_keuntungan,
-        COALESCE(SUM(kr_agg.total_kerugian), 0) as total_kerugian,
-        (COALESCE(SUM(i.jumlah), 0) + COALESCE(SUM(ku_agg.total_keuntungan), 0) - COALESCE(SUM(kr_agg.total_kerugian), 0)) as total_nilai
-    FROM investasi i
-    LEFT JOIN (
-        SELECT investasi_id, SUM(jumlah_keuntungan) AS total_keuntungan
-        FROM keuntungan_investasi GROUP BY investasi_id
-    ) ku_agg ON i.id = ku_agg.investasi_id
-    LEFT JOIN (
-        SELECT investasi_id, SUM(jumlah_kerugian) AS total_kerugian
-        FROM kerugian_investasi GROUP BY investasi_id
-    ) kr_agg ON i.id = kr_agg.investasi_id
-    WHERE i.status = 'aktif'
-";
-$stmt_stats = $koneksi->query($sql_stats);
-$stats = $stmt_stats->fetch();
-
-/* ========================================
    QUERY INVESTASI (DENGAN STATUS)
 ======================================== */
 $sql_investasi = "
@@ -77,7 +53,10 @@ $investasi_list = $stmt_investasi->fetchAll();
 $investasi_aktif = array_filter($investasi_list, fn($inv) => ($inv['status'] ?? 'aktif') === 'aktif');
 $investasi_terjual = array_filter($investasi_list, fn($inv) => ($inv['status'] ?? 'aktif') === 'terjual');
 
-// Hitung total nilai investasi aktif
+// Hitung statistik untuk investasi aktif
+$total_modal_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['modal_investasi'], 0);
+$total_keuntungan_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['total_keuntungan'], 0);
+$total_kerugian_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['total_kerugian'], 0);
 $total_nilai_investasi_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['nilai_sekarang'], 0);
 
 /* ========================================
@@ -88,7 +67,7 @@ $persentase_kas = $total_aset > 0 ? ($saldo_kas / $total_aset * 100) : 0;
 $persentase_investasi = $total_aset > 0 ? ($total_nilai_investasi_aktif / $total_aset * 100) : 0;
 
 /* ========================================
-   QUERY KATEGORI, KEUNTUNGAN, KERUGIAN
+   QUERY KATEGORI, KEUNTUNGAN, KERUGIAN UNTUK SEMUA INVESTASI
 ======================================== */
 $sql_kategori = "SELECT * FROM kategori ORDER BY nama_kategori";
 $stmt_kategori = $koneksi->query($sql_kategori);
@@ -114,13 +93,18 @@ $sql_kerugian = "
 $stmt_kerugian = $koneksi->query($sql_kerugian);
 $kerugian_list = $stmt_kerugian->fetchAll();
 
+// Hitung total keuntungan dan kerugian dari SEMUA investasi (untuk statistik global)
+$sql_total_keuntungan = "SELECT COALESCE(SUM(jumlah_keuntungan), 0) as total FROM keuntungan_investasi";
+$stmt_total_keuntungan = $koneksi->query($sql_total_keuntungan);
+$total_keuntungan = $stmt_total_keuntungan->fetch()['total'];
+
+$sql_total_kerugian = "SELECT COALESCE(SUM(jumlah_kerugian), 0) as total FROM kerugian_investasi";
+$stmt_total_kerugian = $koneksi->query($sql_total_kerugian);
+$total_kerugian = $stmt_total_kerugian->fetch()['total'];
+
 // Hitung metrik
-$total_investasi = $stats['total_investasi'] ?? 0;
-$total_keuntungan = $stats['total_keuntungan'] ?? 0;
-$total_kerugian = $stats['total_kerugian'] ?? 0;
-$total_nilai = $stats['total_nilai'] ?? 0;
 $net_profit = $total_keuntungan - $total_kerugian;
-$roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
+$roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugian_aktif) / $total_modal_aktif * 100) : 0;
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -192,9 +176,9 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
     <main class="main-content">
         <div class="container">
             
-            <!-- Statistics Cards (5 Cards: Kas, Investasi Aktif, Total Aset, Keuntungan, Kerugian) -->
+            <!-- Statistics Cards (6 Cards: Kas, Modal Investasi, Nilai Investasi, Total Aset, Keuntungan, Kerugian) -->
             <section class="stats-section" data-aos="fade-up">
-                <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                <div class="stats-grid">
                     
                     <!-- CARD 1: SALDO KAS -->
                     <div class="stat-card stat-warning">
@@ -207,29 +191,40 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                         <div class="stat-glow"></div>
                     </div>
 
-                    <!-- CARD 2: INVESTASI AKTIF -->
+                    <!-- CARD 2: TOTAL INVESTASI (MODAL) -->
+                    <div class="stat-card stat-info">
+                        <div class="stat-icon"><i class="fas fa-hand-holding-dollar"></i></div>
+                        <div class="stat-content">
+                            <div class="stat-label">Total Investasi</div>
+                            <div class="stat-value" data-value="<?= $total_modal_aktif ?>"><?= format_currency($total_modal_aktif) ?></div>
+                            <div class="stat-sublabel">Modal yang diinvestasikan</div>
+                        </div>
+                        <div class="stat-glow"></div>
+                    </div>
+
+                    <!-- CARD 3: NILAI INVESTASI SEKARANG -->
                     <div class="stat-card stat-primary">
                         <div class="stat-icon"><i class="fas fa-chart-line"></i></div>
                         <div class="stat-content">
-                            <div class="stat-label">Investasi Aktif</div>
+                            <div class="stat-label">Nilai Investasi</div>
                             <div class="stat-value" data-value="<?= $total_nilai_investasi_aktif ?>"><?= format_currency($total_nilai_investasi_aktif) ?></div>
                             <div class="stat-sublabel"><?= count($investasi_aktif) ?> Portofolio Aktif</div>
                         </div>
                         <div class="stat-glow"></div>
                     </div>
 
-                    <!-- CARD 3: TOTAL ASET -->
+                    <!-- CARD 4: TOTAL ASET -->
                     <div class="stat-card stat-purple">
                         <div class="stat-icon"><i class="fas fa-coins"></i></div>
                         <div class="stat-content">
                             <div class="stat-label">Total Aset</div>
                             <div class="stat-value highlight" data-value="<?= $total_aset ?>"><?= format_currency($total_aset) ?></div>
-                            <div class="stat-sublabel">Kas + Investasi</div>
+                            <div class="stat-sublabel">Kas + Nilai Investasi</div>
                         </div>
                         <div class="stat-glow"></div>
                     </div>
 
-                    <!-- CARD 4: KEUNTUNGAN -->
+                    <!-- CARD 5: KEUNTUNGAN -->
                     <div class="stat-card stat-success">
                         <div class="stat-icon"><i class="fas fa-arrow-trend-up"></i></div>
                         <div class="stat-content">
@@ -240,7 +235,7 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                         <div class="stat-glow"></div>
                     </div>
 
-                    <!-- CARD 5: KERUGIAN -->
+                    <!-- CARD 6: KERUGIAN -->
                     <div class="stat-card stat-danger">
                         <div class="stat-icon"><i class="fas fa-arrow-trend-down"></i></div>
                         <div class="stat-content">
@@ -254,7 +249,7 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                 </div>
             </section>
 
-            <!-- Asset Allocation Section (BARU) -->
+            <!-- Asset Allocation Section -->
             <section class="asset-allocation-section" data-aos="fade-up" data-aos-delay="50">
                 <div class="section-header">
                     <h2 class="section-title"><i class="fas fa-chart-pie"></i> Alokasi Aset</h2>
@@ -320,7 +315,7 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                     </div>
                     <div class="analytics-card">
                         <div class="analytics-header"><h4>Profit Ratio</h4><i class="fas fa-chart-bar"></i></div>
-                        <div class="analytics-value info"><?= $total_nilai > 0 ? number_format($total_keuntungan / $total_nilai * 100, 2) : 0 ?>%</div>
+                        <div class="analytics-value info"><?= $total_nilai_investasi_aktif > 0 ? number_format($total_keuntungan_aktif / $total_nilai_investasi_aktif * 100, 2) : 0 ?>%</div>
                         <div class="analytics-footer">Keuntungan / Total Nilai</div>
                     </div>
                 </div>
@@ -388,7 +383,7 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                 </div>
             </section>
 
-            <!-- Portfolio Controls (TAMBAH FILTER STATUS) -->
+            <!-- Portfolio Controls -->
             <section class="portfolio-controls" data-aos="fade-up" data-aos-delay="300">
                 <div class="controls-header">
                     <h2 class="section-title"><i class="fas fa-briefcase"></i> Daftar Investasi</h2>
@@ -435,7 +430,7 @@ $roi_global = $total_investasi > 0 ? ($net_profit / $total_investasi * 100) : 0;
                 </div>
             </section>
 
-            <!-- Investment Grid (TAMBAH STATUS BADGE) -->
+            <!-- Investment Grid -->
             <section class="investments-section" data-aos="fade-up" data-aos-delay="400">
                 <?php if (count($investasi_list) > 0): ?>
                 <div class="investments-grid" id="investmentsGrid">

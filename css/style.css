@@ -780,6 +780,29 @@ body {
   transition: width 0.5s ease;
 }
 
+/* Responsive untuk breakdown */
+@media (max-width: 639px) {
+  .breakdown-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .breakdown-icon {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    font-size: 1rem;
+  }
+
+  .breakdown-values {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .breakdown-item {
+    padding: 1rem;
+  }
+}
+
 /* ========================================
    SECTION STYLES
 ======================================== */

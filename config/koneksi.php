@@ -1,475 +1,373 @@
 <?php
 /**
- * TAMBAHAN HELPER FUNCTIONS untuk config/koneksi.php
- * Tambahkan kode ini di bagian akhir file config/koneksi.php (sebelum ?>)
+ * SAZEN Investment Portfolio Manager v3.0
+ * Database Configuration (Fixed Non-SSL Connection)
+ * Updated: JSON-based file storage
  */
 
 // ==============================
-// Flash Message Functions (TAMBAHAN)
+// Database credentials
 // ==============================
+define('DB_HOST', 'db.fr-pari1.bengt.wasmernet.com');
+define('DB_NAME', 'dbP2q6UBWSHN9Rj63Z9Vk5DV');
+define('DB_USER', '3b526cc07850800092db8371257f');
+define('DB_PASS', '068f3b52-6cc1-7b0b-8000-f27d9e875bf7');
+define('DB_PORT', 10272);
+define('DB_CHARSET', 'utf8mb4');
 
-/**
- * Set flash message (alternatif untuk redirect_with_message)
- */
-if (!function_exists('set_flash_message')) {
-    function set_flash_message($type, $message) {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
-        $_SESSION['flash_type'] = $type;
-        $_SESSION['flash_message'] = $message;
+// ==============================
+// Environment settings
+// ==============================
+date_default_timezone_set('Asia/Jakarta');
+
+// Error reporting (development)
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../logs/php_errors.log');
+
+// Session hardening
+if (session_status() === PHP_SESSION_NONE) {
+    ini_set('session.cookie_httponly', 1);
+    ini_set('session.use_strict_mode', 1);
+    ini_set('session.cookie_samesite', 'Strict');
+}
+
+// ==============================
+// JSON Storage Configuration
+// ==============================
+define('JSON_STORAGE_DIR', __DIR__ . '/../storage/json/');
+define('JSON_FILE_INVESTASI', JSON_STORAGE_DIR . 'bukti_investasi.json');
+define('JSON_FILE_KEUNTUNGAN', JSON_STORAGE_DIR . 'bukti_keuntungan.json');
+define('JSON_FILE_KERUGIAN', JSON_STORAGE_DIR . 'bukti_kerugian.json');
+define('MAX_FILE_SIZE', 5 * 1024 * 1024); // 5MB untuk base64
+define('ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'pdf']);
+
+// Create storage directories if missing
+$storage_dirs = [
+    JSON_STORAGE_DIR,
+    __DIR__ . '/../logs/'
+];
+
+foreach ($storage_dirs as $dir) {
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+}
+
+// Initialize JSON files if not exist
+$json_files = [
+    JSON_FILE_INVESTASI,
+    JSON_FILE_KEUNTUNGAN,
+    JSON_FILE_KERUGIAN
+];
+
+foreach ($json_files as $file) {
+    if (!file_exists($file)) {
+        file_put_contents($file, json_encode([], JSON_PRETTY_PRINT));
     }
 }
 
 // ==============================
-// Additional Format Functions
+// PDO Connection
 // ==============================
+try {
+    $dsn = sprintf(
+        'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+        DB_HOST,
+        DB_PORT,
+        DB_NAME,
+        DB_CHARSET
+    );
 
-/**
- * Format angka biasa (tanpa desimal)
- */
-if (!function_exists('format_number')) {
-    function format_number($number) {
-        return number_format($number, 0, ',', '.');
-    }
-}
+    $options = [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => true,
+        PDO::ATTR_TIMEOUT            => 5,
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
+    ];
 
-/**
- * Format persentase
- */
-if (!function_exists('format_percent')) {
-    function format_percent($percent, $decimals = 2) {
-        return number_format($percent, $decimals, ',', '.') . '%';
+    try {
+        // Koneksi utama (tanpa SSL)
+        $koneksi = new PDO($dsn, DB_USER, DB_PASS, $options);
+    } catch (PDOException $e1) {
+        // Fallback: paksa non-SSL mode
+        $dsn_no_ssl = $dsn . ';sslmode=disabled';
+        $koneksi = new PDO($dsn_no_ssl, DB_USER, DB_PASS, $options);
     }
-}
 
-/**
- * Format tanggal Indonesia
- */
-if (!function_exists('format_date_indonesia')) {
-    function format_date_indonesia($date, $show_time = false) {
-        if (empty($date)) {
-            return '-';
-        }
-        
-        $timestamp = is_numeric($date) ? $date : strtotime($date);
-        
-        $bulan = [
-            1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-        ];
-        
-        $hari = [
-            'Sunday' => 'Minggu',
-            'Monday' => 'Senin',
-            'Tuesday' => 'Selasa',
-            'Wednesday' => 'Rabu',
-            'Thursday' => 'Kamis',
-            'Friday' => 'Jumat',
-            'Saturday' => 'Sabtu'
-        ];
-        
-        $day = date('d', $timestamp);
-        $month = $bulan[(int)date('n', $timestamp)];
-        $year = date('Y', $timestamp);
-        
-        $result = "$day $month $year";
-        
-        if ($show_time) {
-            $time = date('H:i', $timestamp);
-            $result .= " pukul $time";
-        }
-        
-        return $result;
-    }
+} catch (PDOException $e) {
+    // Log error koneksi
+    error_log(
+        sprintf(
+            "[%s] PDO connection failed: %s (DSN: %s)\n",
+            date('Y-m-d H:i:s'),
+            $e->getMessage(),
+            $dsn ?? 'unknown'
+        ),
+        3,
+        __DIR__ . '/../logs/php_errors.log'
+    );
+
+    // Pesan ramah untuk user
+    die("
+    <div style='font-family: Arial; padding: 50px; text-align: center;'>
+        <h2 style='color: #e74c3c;'>⚠️ Database Connection Failed</h2>
+        <p>Tidak dapat terhubung ke database. Silakan cek konfigurasi.</p>
+        <p style='color: #7f8c8d; font-size: 14px;'>
+            Error: " . htmlspecialchars($e->getMessage()) . "
+        </p>
+        <p style='color: #95a5a6; font-size: 12px;'>
+            Host: " . DB_HOST . ':' . DB_PORT . "
+        </p>
+    </div>
+    ");
 }
 
 // ==============================
-// Validation Functions
+// Helper Functions
 // ==============================
 
-/**
- * Validasi email
- */
-if (!function_exists('validate_email')) {
-    function validate_email($email) {
-        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+// Sanitize input
+if (!function_exists('sanitize_input')) {
+    function sanitize_input($data) {
+        return htmlspecialchars(trim($data), ENT_QUOTES, 'UTF-8');
     }
 }
 
-/**
- * Validasi angka
- */
-if (!function_exists('validate_number')) {
-    function validate_number($value, $min = null, $max = null) {
-        if (!is_numeric($value)) {
-            return false;
+// Parse currency input (support Rp 1.000,50 or 1000.50)
+function parse_currency($value) {
+    if (empty($value)) return 0;
+
+    $value = preg_replace('/[^\d\.\,]/', '', $value);
+
+    $lastComma = strrpos($value, ',');
+    $lastDot = strrpos($value, '.');
+
+    if ($lastComma === false && $lastDot === false) {
+        return (float)$value;
+    } elseif ($lastComma !== false && $lastDot !== false) {
+        if ($lastComma > $lastDot) {
+            return (float)str_replace(['.', ','], ['', '.'], $value);
+        } else {
+            return (float)str_replace(',', '', $value);
         }
-        
-        $num = (float)$value;
-        
-        if ($min !== null && $num < $min) {
-            return false;
-        }
-        
-        if ($max !== null && $num > $max) {
-            return false;
-        }
-        
+    } elseif ($lastComma !== false) {
+        return (float)str_replace(',', '.', $value);
+    } else {
+        return (float)str_replace('.', '', $value);
+    }
+}
+
+// Format currency for display
+function format_currency($value) {
+    return 'Rp ' . number_format($value, 2, ',', '.');
+}
+
+// Handle file upload to JSON
+function handle_file_upload($file, $json_file) {
+    if (!isset($file) || $file['error'] === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        throw new Exception('Upload error: ' . $file['error']);
+    }
+
+    if ($file['size'] > MAX_FILE_SIZE) {
+        throw new Exception('File terlalu besar. Maksimal ' . (MAX_FILE_SIZE / 1024 / 1024) . ' MB');
+    }
+
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ALLOWED_EXTENSIONS)) {
+        throw new Exception('Format file tidak didukung. Hanya: ' . implode(', ', ALLOWED_EXTENSIONS));
+    }
+
+    // Read file content and convert to base64
+    $file_content = file_get_contents($file['tmp_name']);
+    $base64_data = base64_encode($file_content);
+
+    // Generate unique ID
+    $file_id = time() . '_' . bin2hex(random_bytes(8));
+
+    // Prepare file data
+    $file_data = [
+        'id' => $file_id,
+        'original_name' => $file['name'],
+        'extension' => $ext,
+        'size' => $file['size'],
+        'mime_type' => mime_content_type($file['tmp_name']),
+        'base64_data' => $base64_data,
+        'uploaded_at' => date('Y-m-d H:i:s')
+    ];
+
+    // Read existing JSON data
+    $json_content = file_get_contents($json_file);
+    $files_array = json_decode($json_content, true) ?: [];
+
+    // Add new file
+    $files_array[$file_id] = $file_data;
+
+    // Save to JSON file
+    if (!file_put_contents($json_file, json_encode($files_array, JSON_PRETTY_PRINT))) {
+        throw new Exception('Gagal menyimpan file ke JSON');
+    }
+
+    return $file_id;
+}
+
+// Get file from JSON
+function get_file_from_json($file_id, $json_file) {
+    if (!file_exists($json_file)) {
+        return null;
+    }
+
+    $json_content = file_get_contents($json_file);
+    $files_array = json_decode($json_content, true) ?: [];
+
+    return $files_array[$file_id] ?? null;
+}
+
+// Delete file from JSON
+function delete_file($file_id, $json_file) {
+    if (!$file_id || !file_exists($json_file)) {
+        return false;
+    }
+
+    $json_content = file_get_contents($json_file);
+    $files_array = json_decode($json_content, true) ?: [];
+
+    if (isset($files_array[$file_id])) {
+        unset($files_array[$file_id]);
+        file_put_contents($json_file, json_encode($files_array, JSON_PRETTY_PRINT));
         return true;
     }
+
+    return false;
 }
 
-// ==============================
-// Security Functions
-// ==============================
-
-/**
- * Generate random token
- */
-if (!function_exists('generate_token')) {
-    function generate_token($length = 32) {
-        return bin2hex(random_bytes($length / 2));
+// Display file from JSON (output base64 data)
+function display_file_from_json($file_id, $json_file) {
+    $file_data = get_file_from_json($file_id, $json_file);
+    
+    if (!$file_data) {
+        http_response_code(404);
+        die('File tidak ditemukan');
     }
+
+    // Set appropriate headers
+    header('Content-Type: ' . $file_data['mime_type']);
+    header('Content-Length: ' . $file_data['size']);
+    header('Content-Disposition: inline; filename="' . $file_data['original_name'] . '"');
+
+    // Output decoded base64 data
+    echo base64_decode($file_data['base64_data']);
+    exit;
 }
 
-/**
- * Check if user is logged in
- */
-if (!function_exists('is_logged_in')) {
-    function is_logged_in() {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
-        return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+// Redirect with message
+function redirect_with_message($url, $type, $message) {
+    $_SESSION['flash_type'] = $type;
+    $_SESSION['flash_message'] = $message;
+    header("Location: $url");
+    exit;
+}
+
+// Get flash message
+function get_flash_message() {
+    if (isset($_SESSION['flash_message'])) {
+        $type = $_SESSION['flash_type'] ?? 'info';
+        $message = $_SESSION['flash_message'];
+        unset($_SESSION['flash_type'], $_SESSION['flash_message']);
+        return ['type' => $type, 'message' => $message];
     }
+    return null;
 }
 
-/**
- * Require login - redirect if not logged in
- */
-if (!function_exists('require_login')) {
-    function require_login($redirect_to = 'admin/auth.php') {
-        if (!is_logged_in()) {
-            header("Location: " . $redirect_to);
-            exit;
-        }
+// Upload file dan simpan ke database (return JSON metadata)
+function handle_file_upload_to_db($file) {
+    if (!isset($file) || $file['error'] === UPLOAD_ERR_NO_FILE) {
+        return null;
     }
-}
 
-/**
- * Get user data dari session
- */
-if (!function_exists('get_user_data')) {
-    function get_user_data($key = null) {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
-        
-        if ($key === null) {
-            return [
-                'user_id' => $_SESSION['user_id'] ?? null,
-                'username' => $_SESSION['username'] ?? null,
-                'email' => $_SESSION['email'] ?? null
-            ];
-        }
-        
-        return $_SESSION[$key] ?? null;
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        throw new Exception('Upload error: ' . $file['error']);
     }
-}
 
-/**
- * Log security event (opsional untuk audit)
- */
-if (!function_exists('log_security_event')) {
-    function log_security_event($event_type, $description, $ip_address = null) {
-        if ($ip_address === null) {
-            $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
-        }
-        
-        $log_dir = __DIR__ . '/../logs';
-        if (!is_dir($log_dir)) {
-            mkdir($log_dir, 0755, true);
-        }
-        
-        $log_file = $log_dir . '/security_' . date('Y-m-d') . '.log';
-        $timestamp = date('Y-m-d H:i:s');
-        $user_id = $_SESSION['user_id'] ?? 'Guest';
-        
-        $log_entry = "[{$timestamp}] [{$event_type}] User: {$user_id} | IP: {$ip_address} | {$description}\n";
-        
-        file_put_contents($log_file, $log_entry, FILE_APPEND | LOCK_EX);
+    if ($file['size'] > MAX_FILE_SIZE) {
+        throw new Exception('File terlalu besar. Maksimal ' . (MAX_FILE_SIZE / 1024 / 1024) . ' MB');
     }
-}
 
-// ==============================
-// Calculation Functions
-// ==============================
-
-/**
- * Calculate ROI (Return on Investment)
- */
-if (!function_exists('calculate_roi')) {
-    function calculate_roi($initial_investment, $current_value) {
-        if ($initial_investment <= 0) {
-            return 0;
-        }
-        
-        return (($current_value - $initial_investment) / $initial_investment) * 100;
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ALLOWED_EXTENSIONS)) {
+        throw new Exception('Format file tidak didukung. Hanya: ' . implode(', ', ALLOWED_EXTENSIONS));
     }
+
+    // Read file and encode to base64
+    $file_content = file_get_contents($file['tmp_name']);
+    $base64_data = base64_encode($file_content);
+
+    // Create metadata JSON
+    $metadata = json_encode([
+        'original_name' => $file['name'],
+        'extension' => $ext,
+        'size' => $file['size'],
+        'mime_type' => mime_content_type($file['tmp_name']),
+        'uploaded_at' => date('Y-m-d H:i:s')
+    ]);
+
+    // Return combined: metadata|base64data
+    return $metadata . '|||' . $base64_data;
 }
 
-/**
- * Get color class based on value
- */
-if (!function_exists('get_value_color_class')) {
-    function get_value_color_class($value) {
-        if ($value > 0) {
-            return 'positive';
-        } elseif ($value < 0) {
-            return 'negative';
-        }
-        return 'neutral';
+// Parse bukti_file dari database
+function parse_bukti_file($bukti_file) {
+    if (empty($bukti_file)) {
+        return null;
     }
-}
 
-// ==============================
-// String Functions
-// ==============================
-
-/**
- * Truncate text
- */
-if (!function_exists('truncate_text')) {
-    function truncate_text($text, $length = 100, $suffix = '...') {
-        if (strlen($text) <= $length) {
-            return $text;
-        }
-        
-        return substr($text, 0, $length) . $suffix;
+    // Split metadata dan base64
+    $parts = explode('|||', $bukti_file, 2);
+    
+    if (count($parts) !== 2) {
+        return null; // Invalid format
     }
-}
 
-/**
- * Slug generator
- */
-if (!function_exists('create_slug')) {
-    function create_slug($text) {
-        $text = strtolower($text);
-        $text = preg_replace('/[^a-z0-9\s-]/', '', $text);
-        $text = preg_replace('/[\s-]+/', '-', $text);
-        $text = trim($text, '-');
-        return $text;
+    $metadata = json_decode($parts[0], true);
+    $base64_data = $parts[1];
+
+    if (!$metadata) {
+        return null;
     }
+
+    return [
+        'original_name' => $metadata['original_name'] ?? 'file',
+        'extension' => $metadata['extension'] ?? 'bin',
+        'size' => $metadata['size'] ?? 0,
+        'mime_type' => $metadata['mime_type'] ?? 'application/octet-stream',
+        'uploaded_at' => $metadata['uploaded_at'] ?? date('Y-m-d H:i:s'),
+        'base64_data' => $base64_data
+    ];
 }
 
-// ==============================
-// Pagination Functions
-// ==============================
-
-/**
- * Create pagination
- */
-if (!function_exists('create_pagination')) {
-    function create_pagination($total_records, $current_page = 1, $records_per_page = 10) {
-        $total_pages = ceil($total_records / $records_per_page);
-        $current_page = max(1, min($current_page, $total_pages));
-        $offset = ($current_page - 1) * $records_per_page;
-        
-        return [
-            'total_records' => $total_records,
-            'total_pages' => $total_pages,
-            'current_page' => $current_page,
-            'records_per_page' => $records_per_page,
-            'offset' => $offset,
-            'has_previous' => $current_page > 1,
-            'has_next' => $current_page < $total_pages,
-            'first_page' => 1,
-            'last_page' => $total_pages,
-            'previous_page' => max(1, $current_page - 1),
-            'next_page' => min($total_pages, $current_page + 1)
-        ];
+// Display file dari database
+function display_file_from_db($bukti_file) {
+    $file_data = parse_bukti_file($bukti_file);
+    
+    if (!$file_data) {
+        http_response_code(404);
+        die('File tidak ditemukan');
     }
+
+    // Set headers
+    header('Content-Type: ' . $file_data['mime_type']);
+    header('Content-Length: ' . $file_data['size']);
+    header('Content-Disposition: inline; filename="' . $file_data['original_name'] . '"');
+    header('Cache-Control: private, max-age=3600');
+
+    // Output decoded base64
+    echo base64_decode($file_data['base64_data']);
+    exit;
 }
-
-// ==============================
-// Debug Functions
-// ==============================
-
-/**
- * Debug print (hanya di development mode)
- */
-if (!function_exists('debug_print')) {
-    function debug_print($data, $die = false) {
-        echo '<pre style="background: #1e293b; color: #f8fafc; padding: 15px; border: 1px solid #334155; border-radius: 8px; margin: 10px; font-family: monospace; overflow-x: auto;">';
-        echo '<strong style="color: #fbbf24;">DEBUG OUTPUT:</strong><br><br>';
-        print_r($data);
-        echo '</pre>';
-        
-        if ($die) {
-            die();
-        }
-    }
-}
-
-/**
- * Dump and die
- */
-if (!function_exists('dd')) {
-    function dd($data) {
-        debug_print($data, true);
-    }
-}
-
-// ==============================
-// Array Helper Functions
-// ==============================
-
-/**
- * Get value from array with default
- */
-if (!function_exists('array_get')) {
-    function array_get($array, $key, $default = null) {
-        return isset($array[$key]) ? $array[$key] : $default;
-    }
-}
-
-/**
- * Check if array is associative
- */
-if (!function_exists('is_assoc_array')) {
-    function is_assoc_array($array) {
-        if (!is_array($array) || empty($array)) {
-            return false;
-        }
-        return array_keys($array) !== range(0, count($array) - 1);
-    }
-}
-
-// ==============================
-// Date/Time Helper Functions
-// ==============================
-
-/**
- * Get relative time (misal: 2 jam yang lalu)
- */
-if (!function_exists('time_ago')) {
-    function time_ago($datetime) {
-        $timestamp = is_numeric($datetime) ? $datetime : strtotime($datetime);
-        $diff = time() - $timestamp;
-        
-        if ($diff < 60) {
-            return 'baru saja';
-        } elseif ($diff < 3600) {
-            $mins = floor($diff / 60);
-            return $mins . ' menit yang lalu';
-        } elseif ($diff < 86400) {
-            $hours = floor($diff / 3600);
-            return $hours . ' jam yang lalu';
-        } elseif ($diff < 604800) {
-            $days = floor($diff / 86400);
-            return $days . ' hari yang lalu';
-        } else {
-            return date('d M Y', $timestamp);
-        }
-    }
-}
-
-// ==============================
-// HTTP Helper Functions
-// ==============================
-
-/**
- * Get current URL
- */
-if (!function_exists('current_url')) {
-    function current_url() {
-        $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
-        return $protocol . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
-    }
-}
-
-/**
- * Get base URL
- */
-if (!function_exists('base_url')) {
-    function base_url($path = '') {
-        $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
-        $base = $protocol . '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['SCRIPT_NAME']);
-        return rtrim($base, '/') . '/' . ltrim($path, '/');
-    }
-}
-
-/**
- * Redirect to URL
- */
-if (!function_exists('redirect')) {
-    function redirect($url, $status_code = 302) {
-        header("Location: $url", true, $status_code);
-        exit;
-    }
-}
-
-// ==============================
-// JSON Response Helper
-// ==============================
-
-/**
- * Send JSON response
- */
-if (!function_exists('json_response')) {
-    function json_response($data, $status_code = 200) {
-        http_response_code($status_code);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-}
-
-/**
- * Success JSON response
- */
-if (!function_exists('json_success')) {
-    function json_success($message, $data = null) {
-        json_response([
-            'success' => true,
-            'message' => $message,
-            'data' => $data
-        ]);
-    }
-}
-
-/**
- * Error JSON response
- */
-if (!function_exists('json_error')) {
-    function json_error($message, $status_code = 400) {
-        json_response([
-            'success' => false,
-            'message' => $message
-        ], $status_code);
-    }
-}
-
-// ==============================
-// File Size Helper
-// ==============================
-
-/**
- * Format file size ke human readable
- */
-if (!function_exists('format_file_size')) {
-    function format_file_size($bytes) {
-        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        $bytes = max($bytes, 0);
-        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-        $pow = min($pow, count($units) - 1);
-        $bytes /= (1 << (10 * $pow));
-        
-        return round($bytes, 2) . ' ' . $units[$pow];
-    }
-}
-
-// ==============================
-// END OF ADDITIONAL HELPERS
-// ==============================
+?>

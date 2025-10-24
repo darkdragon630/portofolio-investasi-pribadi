@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: kelola_kas.php");
             exit;
         } catch (PDOException $e) {
-            set_flash_message('error', 'Gagal menambahkan transaksi: ' . $e->getMessage());
+            //set_flash_message('error', 'Gagal menambahkan transaksi: ' . $e->getMessage());
         }
     }
     

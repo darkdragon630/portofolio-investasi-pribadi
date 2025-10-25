@@ -13,9 +13,11 @@
  * ✅ Fixed PDO binding untuk LIMIT (harus PDO::PARAM_INT)
  * ✅ Fixed fetchAll() untuk return PDO::FETCH_ASSOC
  * ✅ Added better error handling dan logging
+ * ✅ Fixed duplicate function declaration (format_currency)
  * 
  * CATATAN: 
  * - Fungsi upload file sudah ada di koneksi.php
+ * - Fungsi format_currency() sudah ada di koneksi.php
  * - Menggunakan JSON-based storage (base64) dari koneksi.php
  * - Fungsi handle_file_upload_to_db() digunakan untuk cash & sales
  */
@@ -147,7 +149,9 @@ function get_recent_cash_transactions($koneksi, $limit = 10) {
         return $results;
     } catch (PDOException $e) {
         error_log("Error get_recent_cash_transactions: " . $e->getMessage());
-        error_log("SQL Error: " . print_r($stmt->errorInfo(), true));
+        if (isset($stmt)) {
+            error_log("SQL Error: " . print_r($stmt->errorInfo(), true));
+        }
         return [];
     }
 }
@@ -630,17 +634,8 @@ HTML;
 }
 
 // ========================================
-// HELPER FUNCTION - Format Currency
+// NOTE: format_currency() sudah ada di koneksi.php
 // ========================================
-
-/**
- * Format number to IDR currency
- * @param float|int $amount Amount to format
- * @return string Formatted currency string
- */
-function format_currency($amount) {
-    return 'Rp ' . number_format((float)$amount, 2, ',', '.');
-}
 
 // ========================================
 // DEBUG FUNCTION (Hapus di production)
@@ -706,7 +701,8 @@ function debug_queries($koneksi) {
     echo "</pre>";
     
     echo "</div>";
-    die("Debug complete - Comment out debug_queries() call to continue");
+    die("Debug complete - Comment out debug_queries()
+    call to continue");
 }
 
 // ========================================

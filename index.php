@@ -96,7 +96,7 @@ $sql_keuntungan = "
     FROM keuntungan_investasi ki
     JOIN investasi i ON ki.investasi_id = i.id
     JOIN kategori k ON ki.kategori_id = k.id
-    ORDER BY ki.tanggal_keuntungan DESC LIMIT 5
+    ORDER BY ki.tanggal_keuntungan DESC
 ";
 $stmt_keuntungan = $koneksi->query($sql_keuntungan);
 $keuntungan_list = $stmt_keuntungan->fetchAll();
@@ -106,7 +106,7 @@ $sql_kerugian = "
     FROM kerugian_investasi kr
     JOIN investasi i ON kr.investasi_id = i.id
     JOIN kategori k ON kr.kategori_id = k.id
-    ORDER BY kr.tanggal_kerugian DESC LIMIT 5
+    ORDER BY kr.tanggal_kerugian DESC
 ";
 $stmt_kerugian = $koneksi->query($sql_kerugian);
 $kerugian_list = $stmt_kerugian->fetchAll();

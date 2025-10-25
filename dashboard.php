@@ -26,7 +26,23 @@ if (isset($_POST['logout'])) {
 }
 
 // Get flash message
-$flash = get_flash_message();
+echo get_flash_message('success');
+echo get_flash_message('error');
+
+function get_all_flash_messages(): array
+{
+    if (empty($_SESSION['_flash'])) {
+        return [];
+    }
+    $messages = $_SESSION['_flash'];
+    unset($_SESSION['_flash']);
+    return $messages;
+}
+
+/* Tampilkan semua pesan flash sekaligus */
+foreach (get_all_flash_messages() as $type => $msg) {
+    echo flash($type);   // fungsi flash() sudah otomatis memanggil get_flash_message($type)
+}
 
 /* ========================================
    STATISTIK GLOBAL & KAS

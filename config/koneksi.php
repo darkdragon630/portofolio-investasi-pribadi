@@ -274,16 +274,6 @@ function redirect_with_message($url, $type, $message) {
     exit;
 }
 
-// Get flash message
-function get_flash_message() {
-    if (isset($_SESSION['flash_message'])) {
-        $type = $_SESSION['flash_type'] ?? 'info';
-        $message = $_SESSION['flash_message'];
-        unset($_SESSION['flash_type'], $_SESSION['flash_message']);
-        return ['type' => $type, 'message' => $message];
-    }
-    return null;
-}
 
 // Upload file dan simpan ke database (return JSON metadata)
 function handle_file_upload_to_db($file) {

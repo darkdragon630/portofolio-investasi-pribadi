@@ -1,13 +1,18 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * Additional Helper Functions
+ * Additional Helper Functions - FIXED VERSION
  * 
  * File ini adalah ADDON untuk koneksi.php
  * Berisi fungsi-fungsi khusus untuk:
  * - Cash Balance Management
  * - Transaksi Jual Investasi
  * - Utility Functions
+ * 
+ * PERBAIKAN v3.0.1:
+ * ✅ Fixed PDO binding untuk LIMIT (harus PDO::PARAM_INT)
+ * ✅ Fixed fetchAll() untuk return PDO::FETCH_ASSOC
+ * ✅ Added better error handling dan logging
  * 
  * CATATAN: 
  * - Fungsi upload file sudah ada di koneksi.php
@@ -27,15 +32,14 @@
 function get_cash_balance($koneksi) {
     try {
         $sql = "SELECT 
-                    SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END) as total_masuk,
-                    SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END) as total_keluar,
-                    (SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END) - 
-                     SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END)) as saldo_akhir,
+                    COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END), 0) as total_masuk,
+                    COALESCE(SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END), 0) as total_keluar,
+                    COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE -jumlah END), 0) as saldo_akhir,
                     COUNT(*) as total_transaksi
                 FROM cash_balance";
         
         $stmt = $koneksi->query($sql);
-        $result = $stmt->fetch();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // Return default values if no data
         if (!$result || $result['total_transaksi'] == 0) {
@@ -97,17 +101,21 @@ function get_cash_by_category($koneksi) {
     try {
         $sql = "SELECT 
                     kategori,
-                    SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END) as total_masuk,
-                    SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END) as total_keluar,
-                    (SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END) - 
-                     SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END)) as saldo,
+                    COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END), 0) as total_masuk,
+                    COALESCE(SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END), 0) as total_keluar,
+                    COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE -jumlah END), 0) as saldo,
                     COUNT(*) as jumlah_transaksi
                 FROM cash_balance
                 GROUP BY kategori
-                ORDER BY saldo DESC";
+                HAVING saldo != 0 OR total_masuk > 0 OR total_keluar > 0
+                ORDER BY ABS(saldo) DESC";
         
         $stmt = $koneksi->query($sql);
-        return $stmt->fetchAll();
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        error_log("get_cash_by_category: Found " . count($results) . " categories");
+        
+        return $results;
     } catch (PDOException $e) {
         error_log("Error get_cash_by_category: " . $e->getMessage());
         return [];
@@ -115,7 +123,7 @@ function get_cash_by_category($koneksi) {
 }
 
 /**
- * Get recent cash transactions
+ * Get recent cash transactions - FIXED VERSION
  * @param PDO $koneksi Database connection
  * @param int $limit Number of records
  * @return array
@@ -124,13 +132,22 @@ function get_recent_cash_transactions($koneksi, $limit = 10) {
     try {
         $sql = "SELECT * FROM cash_balance 
                 ORDER BY tanggal DESC, created_at DESC 
-                LIMIT ?";
+                LIMIT :limit";
         
         $stmt = $koneksi->prepare($sql);
-        $stmt->execute([$limit]);
-        return $stmt->fetchAll();
+        // ✅ PERBAIKAN: Bind dengan PDO::PARAM_INT, bukan string!
+        $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+        $stmt->execute();
+        
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Debug log
+        error_log("get_recent_cash_transactions: Found " . count($results) . " records (limit: $limit)");
+        
+        return $results;
     } catch (PDOException $e) {
         error_log("Error get_recent_cash_transactions: " . $e->getMessage());
+        error_log("SQL Error: " . print_r($stmt->errorInfo(), true));
         return [];
     }
 }
@@ -146,7 +163,7 @@ function get_cash_transaction_by_id($koneksi, $id) {
         $sql = "SELECT * FROM cash_balance WHERE id = ?";
         $stmt = $koneksi->prepare($sql);
         $stmt->execute([$id]);
-        return $stmt->fetch();
+        return $stmt->fetch(PDO::FETCH_ASSOC);
     } catch (PDOException $e) {
         error_log("Error get_cash_transaction_by_id: " . $e->getMessage());
         return null;
@@ -229,7 +246,7 @@ function add_sale_transaction($koneksi, $data) {
         
         $stmt_inv = $koneksi->prepare($sql_inv);
         $stmt_inv->execute([$data['investasi_id']]);
-        $inv = $stmt_inv->fetch();
+        $inv = $stmt_inv->fetch(PDO::FETCH_ASSOC);
         
         if (!$inv) {
             throw new Exception("Investasi tidak ditemukan");
@@ -295,6 +312,8 @@ function add_sale_transaction($koneksi, $data) {
         
         $koneksi->commit();
         
+        error_log("add_sale_transaction: Success - Investment ID " . $data['investasi_id']);
+        
         return [
             'success' => true,
             'profit_loss' => $profit_loss,
@@ -304,7 +323,9 @@ function add_sale_transaction($koneksi, $data) {
         ];
         
     } catch (Exception $e) {
-        $koneksi->rollBack();
+        if ($koneksi->inTransaction()) {
+            $koneksi->rollBack();
+        }
         error_log("Error add_sale_transaction: " . $e->getMessage());
         return [
             'success' => false,
@@ -314,7 +335,7 @@ function add_sale_transaction($koneksi, $data) {
 }
 
 /**
- * Get sale transactions with investment details
+ * Get sale transactions with investment details - FIXED VERSION
  * @param PDO $koneksi Database connection
  * @param int|null $limit Number of records
  * @return array
@@ -324,6 +345,7 @@ function get_sale_transactions($koneksi, $limit = null) {
         $sql = "SELECT 
                     tj.*,
                     i.judul_investasi,
+                    i.kategori_id,
                     k.nama_kategori,
                     CASE 
                         WHEN tj.profit_loss > 0 THEN 'profit'
@@ -335,17 +357,27 @@ function get_sale_transactions($koneksi, $limit = null) {
                 JOIN kategori k ON i.kategori_id = k.id
                 ORDER BY tj.tanggal_jual DESC";
         
-        if ($limit) {
-            $sql .= " LIMIT ?";
+        if ($limit !== null && $limit > 0) {
+            $sql .= " LIMIT :limit";
             $stmt = $koneksi->prepare($sql);
-            $stmt->execute([$limit]);
+            // ✅ PERBAIKAN: Bind dengan PDO::PARAM_INT!
+            $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+            $stmt->execute();
         } else {
             $stmt = $koneksi->query($sql);
         }
         
-        return $stmt->fetchAll();
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Debug log
+        error_log("get_sale_transactions: Found " . count($results) . " records (limit: " . ($limit ?? 'all') . ")");
+        
+        return $results;
     } catch (PDOException $e) {
         error_log("Error get_sale_transactions: " . $e->getMessage());
+        if (isset($stmt)) {
+            error_log("SQL Error: " . print_r($stmt->errorInfo(), true));
+        }
         return [];
     }
 }
@@ -361,6 +393,7 @@ function get_sale_transaction($koneksi, $id) {
         $sql = "SELECT 
                     tj.*,
                     i.judul_investasi,
+                    i.kategori_id,
                     k.nama_kategori,
                     CASE 
                         WHEN tj.profit_loss > 0 THEN 'profit'
@@ -374,7 +407,7 @@ function get_sale_transaction($koneksi, $id) {
         
         $stmt = $koneksi->prepare($sql);
         $stmt->execute([$id]);
-        return $stmt->fetch();
+        return $stmt->fetch(PDO::FETCH_ASSOC);
     } catch (PDOException $e) {
         error_log("Error get_sale_transaction: " . $e->getMessage());
         return null;
@@ -400,7 +433,7 @@ function get_sales_statistics($koneksi) {
                 FROM transaksi_jual";
         
         $stmt = $koneksi->query($sql);
-        $result = $stmt->fetch();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$result || $result['total_transaksi'] == 0) {
             return [
@@ -414,6 +447,8 @@ function get_sales_statistics($koneksi) {
                 'transaksi_break_even' => 0
             ];
         }
+        
+        error_log("get_sales_statistics: Total " . $result['total_transaksi'] . " transactions");
         
         return $result;
     } catch (PDOException $e) {
@@ -449,11 +484,15 @@ function get_active_investments($koneksi) {
                 LEFT JOIN keuntungan_investasi ku ON i.id = ku.investasi_id
                 LEFT JOIN kerugian_investasi kr ON i.id = kr.investasi_id
                 WHERE i.status = 'aktif'
-                GROUP BY i.id
+                GROUP BY i.id, k.nama_kategori
                 ORDER BY i.tanggal_investasi DESC";
         
         $stmt = $koneksi->query($sql);
-        return $stmt->fetchAll();
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        error_log("get_active_investments: Found " . count($results) . " active investments");
+        
+        return $results;
     } catch (PDOException $e) {
         error_log("Error get_active_investments: " . $e->getMessage());
         return [];
@@ -474,13 +513,13 @@ function get_investment_status_breakdown($koneksi) {
         $sql = "SELECT 
                     status,
                     COUNT(*) as jumlah,
-                    SUM(jumlah) as total_nilai
+                    COALESCE(SUM(jumlah), 0) as total_nilai
                 FROM investasi
                 GROUP BY status
                 ORDER BY jumlah DESC";
         
         $stmt = $koneksi->query($sql);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (PDOException $e) {
         error_log("Error get_investment_status_breakdown: " . $e->getMessage());
         return [];
@@ -503,7 +542,7 @@ function get_monthly_performance($koneksi, $year = null) {
                     MONTH(tanggal_investasi) as bulan,
                     DATE_FORMAT(tanggal_investasi, '%M') as nama_bulan,
                     COUNT(*) as jumlah_investasi,
-                    SUM(jumlah) as total_investasi
+                    COALESCE(SUM(jumlah), 0) as total_investasi
                 FROM investasi
                 WHERE YEAR(tanggal_investasi) = ?
                 GROUP BY MONTH(tanggal_investasi), DATE_FORMAT(tanggal_investasi, '%M')
@@ -511,7 +550,7 @@ function get_monthly_performance($koneksi, $year = null) {
         
         $stmt = $koneksi->prepare($sql);
         $stmt->execute([$year]);
-        return $stmt->fetchAll();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (PDOException $e) {
         error_log("Error get_monthly_performance: " . $e->getMessage());
         return [];
@@ -589,7 +628,88 @@ function flash(string $type): string
     </div>
 HTML;
 }
+
 // ========================================
-// EOF
+// HELPER FUNCTION - Format Currency
+// ========================================
+
+/**
+ * Format number to IDR currency
+ * @param float|int $amount Amount to format
+ * @return string Formatted currency string
+ */
+function format_currency($amount) {
+    return 'Rp ' . number_format((float)$amount, 2, ',', '.');
+}
+
+// ========================================
+// DEBUG FUNCTION (Hapus di production)
+// ========================================
+
+/**
+ * Debug database queries - USE ONLY FOR DEVELOPMENT
+ * Uncomment di dashboard.php untuk test: debug_queries($koneksi);
+ * 
+ * @param PDO $koneksi Database connection
+ */
+function debug_queries($koneksi) {
+    echo "<div style='background:#f5f5f5;padding:20px;margin:20px;border:2px solid #333;'>";
+    echo "<h2>🔍 Debug Information</h2>";
+    
+    // Test cash balance
+    echo "<h3>Cash Transactions:</h3>";
+    $cash = get_recent_cash_transactions($koneksi, 6);
+    echo "<p><strong>Records found:</strong> " . count($cash) . "</p>";
+    if (count($cash) > 0) {
+        echo "<pre style='background:#fff;padding:10px;overflow:auto;'>";
+        print_r($cash[0]);
+        echo "</pre>";
+    } else {
+        echo "<p style='color:red;'>❌ No cash transactions found!</p>";
+    }
+    
+    // Test sales
+    echo "<h3>Sales Transactions:</h3>";
+    $sales = get_sale_transactions($koneksi, 6);
+    echo "<p><strong>Records found:</strong> " . count($sales) . "</p>";
+    if (count($sales) > 0) {
+        echo "<pre style='background:#fff;padding:10px;overflow:auto;'>";
+        print_r($sales[0]);
+        echo "</pre>";
+    } else {
+        echo "<p style='color:red;'>❌ No sales transactions found!</p>";
+    }
+    
+    // Test cash by category
+    echo "<h3>Cash by Category:</h3>";
+    $cash_cat = get_cash_by_category($koneksi);
+    echo "<p><strong>Categories found:</strong> " . count($cash_cat) . "</p>";
+    if (count($cash_cat) > 0) {
+        echo "<table border='1' cellpadding='5' style='background:#fff;'>";
+        echo "<tr><th>Kategori</th><th>Masuk</th><th>Keluar</th><th>Saldo</th></tr>";
+        foreach ($cash_cat as $cat) {
+            echo "<tr>";
+            echo "<td>" . htmlspecialchars($cat['kategori']) . "</td>";
+            echo "<td>" . format_currency($cat['total_masuk']) . "</td>";
+            echo "<td>" . format_currency($cat['total_keluar']) . "</td>";
+            echo "<td>" . format_currency($cat['saldo']) . "</td>";
+            echo "</tr>";
+        }
+        echo "</table>";
+    }
+    
+    // Test sales statistics
+    echo "<h3>Sales Statistics:</h3>";
+    $stats = get_sales_statistics($koneksi);
+    echo "<pre style='background:#fff;padding:10px;overflow:auto;'>";
+    print_r($stats);
+    echo "</pre>";
+    
+    echo "</div>";
+    die("Debug complete - Comment out debug_queries() call to continue");
+}
+
+// ========================================
+// EOF - SAZEN v3.0.1 Functions Fixed
 // ========================================
 ?>

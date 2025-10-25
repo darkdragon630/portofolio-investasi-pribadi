@@ -1,10 +1,9 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * View File from Database
- * Updated: Support cash_balance & transaksi_jual
+ * View File from Database - Investment Files Only
+ * Updated: Removed cash_balance & transaksi_jual (moved to separate files)
  */
-
 require_once 'config/koneksi.php';
 
 // Validate parameters
@@ -27,17 +26,9 @@ switch ($type) {
     case 'kerugian':
         $table = 'kerugian_investasi';
         break;
-    case 'cash':
-    case 'cash_balance':
-        $table = 'cash_balance';
-        break;
-    case 'jual':
-    case 'transaksi_jual':
-        $table = 'transaksi_jual';
-        break;
     default:
         http_response_code(400);
-        die('Invalid file type. Allowed: investasi, keuntungan, kerugian, cash, jual');
+        die('Invalid file type. Allowed: investasi, keuntungan, kerugian');
 }
 
 try {

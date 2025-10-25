@@ -7,7 +7,11 @@ session_start();
 require_once "../config/koneksi.php";
 require_once "../config/functions.php";
 
-require_login();
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    header("Location: auth.php");
+    exit;
+}
 
 $errors = [];
 $success = false;

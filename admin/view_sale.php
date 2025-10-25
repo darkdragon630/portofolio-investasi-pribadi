@@ -156,12 +156,12 @@ if (!$sale) {
             <h3><i class="fas fa-file-invoice"></i> Bukti Transaksi</h3>
             <div class="file-preview-container">
                 <div class="file-preview">
-                    <iframe src="../view_file.php?type=jual&id=<?= $sale['id'] ?>" 
+                    <iframe src="../view_sale_file.php?id=<?= $sale['id'] ?>" 
                             style="width: 100%; height: 500px; border: 1px solid #e2e8f0; border-radius: 8px;">
                     </iframe>
                 </div>
                 <div class="file-actions">
-                    <a href="../view_file.php?type=jual&id=<?= $sale['id'] ?>" 
+                    <a href="../view_sale_file.php?id=<?= $sale['id'] ?>" 
                        target="_blank" 
                        class="btn btn-primary">
                         <i class="fas fa-external-link-alt"></i> Buka di Tab Baru

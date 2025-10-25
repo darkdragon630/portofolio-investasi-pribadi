@@ -534,4 +534,62 @@ function validate_required($data, $required_fields) {
     }
     return $errors;
 }
+
+// ========================================
+// FLASH MESSAGE FUNCTIONS
+// ========================================
+
+/**
+ * Simpan pesan flash ke session
+ * @param string $type    tipe: success | error | warning | info
+ * @param string $message teks pesan
+ */
+function set_flash_message(string $type, string $message): void
+{
+    $_SESSION['_flash'][$type] = $message;
+}
+
+/**
+ * Ambil (lalu hapus) pesan flash dari session
+ * @param  string $type tipe pesan yang ingin diambil
+ * @return string|null  teks pesan atau null kalau tidak ada
+ */
+function get_flash_message(string $type): ?string
+{
+    if (isset($_SESSION['_flash'][$type])) {
+        $msg = $_SESSION['_flash'][$type];
+        unset($_SESSION['_flash'][$type]);
+        return $msg;
+    }
+    return null;
+}
+
+/**
+ * Tampilkan pesan flash (jika ada) dalam bentuk HTML
+ * @param  string $type tipe pesan
+ * @return string       HTML alert atau string kosong
+ */
+function flash(string $type): string
+{
+    $msg = get_flash_message($type);
+    if (!$msg) {
+        return '';
+    }
+    $icons = [
+        'success' => 'check-circle',
+        'error'   => 'exclamation-circle',
+        'warning' => 'exclamation-triangle',
+        'info'    => 'info-circle'
+    ];
+    $icon = $icons[$type] ?? 'info-circle';
+    return <<<HTML
+    <div class="alert alert-{$type}">
+        <i class="fas fa-{$icon}"></i>
+        <span>{$msg}</span>
+    </div>
+HTML;
+}
+// ========================================
+// EOF
+// ========================================
 ?>

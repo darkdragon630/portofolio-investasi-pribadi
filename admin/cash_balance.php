@@ -7,7 +7,11 @@ session_start();
 require_once "../config/koneksi.php";
 require_once "../config/functions.php";
 
-require_login();
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    header("Location: auth.php");
+    exit;
+}
 
 $errors = [];
 $success = false;
@@ -38,34 +42,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "Kategori harus dipilih";
     }
     
-   // Handle file upload (menggunakan fungsi dari koneksi.php - JSON based)
+    // Handle file upload untuk LONGBLOB
     $bukti_file = null;
     if (isset($_FILES['bukti_file']) && $_FILES['bukti_file']['error'] === UPLOAD_ERR_OK) {
         try {
-            // Simpan ke database sebagai base64 (JSON metadata + base64 data)
+            // Untuk LONGBLOB, simpan sebagai base64 dengan metadata JSON
             $bukti_file = handle_file_upload_to_db($_FILES['bukti_file']);
         } catch (Exception $e) {
-            $errors[] = $e->getMessage();
+            $errors[] = "Upload error: " . $e->getMessage();
         }
     }
     
     if (empty($errors)) {
-        $data = [
-            'tanggal' => $tanggal,
-            'judul' => $judul,
-            'tipe' => $tipe,
-            'jumlah' => $jumlah,
-            'kategori' => $kategori,
-            'keterangan' => $keterangan,
-            'bukti_file' => $bukti_file
-        ];
-        
-        if (add_cash_transaction($koneksi, $data)) {
-            set_flash_message('success', 'Transaksi kas berhasil dicatat!');
-            header("Location: ../dashboard.php");
-            exit;
-        } else {
-            $errors[] = "Gagal menyimpan transaksi kas";
+        try {
+            $sql = "INSERT INTO cash_balance 
+                    (tanggal, judul, tipe, jumlah, kategori, keterangan, bukti_file) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?)";
+            
+            $stmt = $koneksi->prepare($sql);
+            $result = $stmt->execute([
+                $tanggal,
+                $judul,
+                $tipe,
+                $jumlah,
+                $kategori,
+                $keterangan,
+                $bukti_file
+            ]);
+            
+            if ($result) {
+                redirect_with_message("../dashboard.php", 'success', 'Transaksi kas berhasil dicatat!');
+            } else {
+                $errors[] = "Gagal menyimpan transaksi kas";
+            }
+        } catch (PDOException $e) {
+            error_log("Error save cash: " . $e->getMessage());
+            $errors[] = "Database error: " . $e->getMessage();
         }
     }
 }
@@ -116,10 +128,18 @@ $recent_transactions = get_recent_cash_transactions($koneksi, 10);
         <div class="alert alert-error">
             <i class="fas fa-exclamation-circle"></i>
             <div>
+                <strong>Terjadi Kesalahan:</strong>
                 <?php foreach ($errors as $error): ?>
                     <p><?= htmlspecialchars($error) ?></p>
                 <?php endforeach; ?>
             </div>
+        </div>
+    <?php endif; ?>
+    
+    <?php if ($success): ?>
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle"></i>
+            <div>Transaksi berhasil disimpan!</div>
         </div>
     <?php endif; ?>
 
@@ -262,6 +282,18 @@ document.getElementById('cashForm').addEventListener('submit', function(e) {
 </script>
 
 <style>
+.alert-success {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+    padding: 1rem 1.25rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: start;
+    gap: 0.75rem;
+}
+
 .balance-summary {
     margin: 2rem 0;
 }

@@ -183,6 +183,8 @@ $kerugian_list = $koneksi->query("
     JOIN kategori k ON kr.kategori_id = k.id
     ORDER BY kr.tanggal_kerugian DESC LIMIT 6
 ")->fetchAll();
+
+$flash = $_SESSION['_flash'] ?? null;
 ?>
 <!DOCTYPE html>
 <html lang="id">

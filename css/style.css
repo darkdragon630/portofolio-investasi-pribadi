@@ -120,6 +120,22 @@ body {
   color: var(--primary-color);
   animation: pulse 2s ease-in-out infinite;
   margin-bottom: 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.logo-icon {
+  width: 80px; /* ubah sesuai kebutuhan */
+  height: auto;
+  animation: glow 2s infinite alternate;
+}
+
+/* Efek bercahaya lembut */
+@keyframes glow {
+  from { filter: drop-shadow(0 0 2px gold); }
+  to { filter: drop-shadow(0 0 12px gold); }
 }
 
 .loading-spinner {

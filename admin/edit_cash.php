@@ -46,7 +46,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $jumlah = (float)str_replace(['.', ','], ['', '.'], $_POST['jumlah']);
     $tanggal = $_POST['tanggal'];
     $keterangan = trim($_POST['keterangan']);
-    $kategori_id = !empty($_POST['kategori_id']) ? (int)$_POST['kategori_id'] : null;
     
     // Validation
     $errors = [];

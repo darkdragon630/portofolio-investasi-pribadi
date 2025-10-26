@@ -5,7 +5,7 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-/ DEBUG: Tampilkan semua parameter
+// DEBUG: Tampilkan semua parameter
 echo "<pre>";
 echo "GET params: ";
 print_r($_GET);

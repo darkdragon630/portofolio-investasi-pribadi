@@ -21,7 +21,7 @@ if (!isset($_GET['id'])) {
 $id = (int)$_GET['id'];
 
 // Get cash balance detail
-function get_cash_transaction_by_id($koneksi, $id)
+$cash = get_cash_transaction_by_id($koneksi, $id);
 
 if (!$cash) {
     redirect_with_message("../dashboard.php", 'error', 'Data cash balance tidak ditemukan');

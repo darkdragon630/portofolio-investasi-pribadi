@@ -21,6 +21,7 @@ if (!isset($_GET['id'])) {
 $id = (int)$_GET['id'];
 
 // Get cash balance detail
+function get_cash_transaction_by_id($koneksi, $id)
 try {
     $sql = "SELECT * FROM cash_balance WHERE id = ? AND user_id = ?";
     $stmt = $koneksi->prepare($sql);

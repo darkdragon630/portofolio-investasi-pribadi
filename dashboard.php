@@ -1,16 +1,16 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * ULTIMATE Dashboard - Gabungan Semua Fitur
+ * Laporan & Analytics Dashboard
  */
 
 session_start();
-require_once "config/koneksi.php";
-require_once "config/functions.php";
+require_once "../config/koneksi.php";
+require_once "../config/functions.php";
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
-    header("Location: admin/auth.php");
+    header("Location: auth.php");
     exit;
 }
 
@@ -21,55 +21,33 @@ $email = $_SESSION['email'];
 // Logout handler
 if (isset($_POST['logout'])) {
     session_destroy();
-    header("Location: admin/auth.php");
+    header("Location: auth.php");
     exit;
 }
 
-// Get flash message
-echo get_flash_message('success');
-echo get_flash_message('error');
-
-function get_all_flash_messages(): array
-{
-    if (empty($_SESSION['_flash'])) {
-        return [];
-    }
-    $messages = $_SESSION['_flash'];
-    unset($_SESSION['_flash']);
-    return $messages;
-}
-
-/* Tampilkan semua pesan flash sekaligus */
-foreach (get_all_flash_messages() as $type => $msg) {
-    echo flash($type);   // fungsi flash() sudah otomatis memanggil get_flash_message($type)
-}
+// Date Range Filter
+$start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-01-01');
+$end_date = isset($_GET['end_date']) ? $_GET['end_date'] : date('Y-m-d');
 
 /* ========================================
-   STATISTIK GLOBAL & KAS
+   STATISTIK GLOBAL
 ======================================== */
 // Cash Balance
 $cash_balance = get_cash_balance($koneksi);
 $saldo_kas = $cash_balance ? (float)$cash_balance['saldo_akhir'] : 0;
-$total_kas_masuk = $cash_balance ? (float)$cash_balance['total_masuk'] : 0;
-$total_kas_keluar = $cash_balance ? (float)$cash_balance['total_keluar'] : 0;
 
 // Sales Statistics
 $sales_stats = get_sales_statistics($koneksi);
 $total_sales = $sales_stats ? (float)$sales_stats['total_penjualan'] : 0;
 $sales_profit_loss = $sales_stats ? (float)$sales_stats['total_profit_loss'] : 0;
-$avg_roi_sales = $sales_stats ? (float)$sales_stats['avg_roi'] : 0;
 
-/* ========================================
-   QUERY INVESTASI (DENGAN STATUS)
-======================================== */
+// Investment Statistics
 $sql_investasi_all = "
     SELECT 
         i.id,
         i.judul_investasi,
-        i.deskripsi,
         i.jumlah as modal_investasi,
         i.tanggal_investasi,
-        i.bukti_file,
         i.status,
         k.nama_kategori,
         COALESCE(ku_agg.total_keuntungan, 0) as total_keuntungan,
@@ -85,120 +63,568 @@ $sql_investasi_all = "
         SELECT investasi_id, SUM(jumlah_kerugian) AS total_kerugian
         FROM kerugian_investasi GROUP BY investasi_id
     ) kr_agg ON i.id = kr_agg.investasi_id
+    WHERE i.tanggal_investasi BETWEEN :start_date AND :end_date
     ORDER BY i.tanggal_investasi DESC
 ";
-$stmt_investasi_all = $koneksi->query($sql_investasi_all);
-$investasi_all = $stmt_investasi_all->fetchAll();
+$stmt = $koneksi->prepare($sql_investasi_all);
+$stmt->execute(['start_date' => $start_date, 'end_date' => $end_date]);
+$investasi_all = $stmt->fetchAll();
 
-// Pisahkan berdasarkan status
 $investasi_aktif = array_filter($investasi_all, fn($inv) => ($inv['status'] ?? 'aktif') === 'aktif');
-$investasi_terjual = array_filter($investasi_all, fn($inv) => ($inv['status'] ?? 'aktif') === 'terjual');
+$total_modal = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['modal_investasi'], 0);
+$total_nilai_investasi = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['nilai_sekarang'], 0);
 
-// Hitung statistik investasi aktif
-$total_modal_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['modal_investasi'], 0);
-$total_nilai_investasi_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['nilai_sekarang'], 0);
-$total_keuntungan_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['total_keuntungan'], 0);
-$total_kerugian_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['total_kerugian'], 0);
+// Total Keuntungan & Kerugian
+$sql_keuntungan = "SELECT COALESCE(SUM(jumlah_keuntungan), 0) as total FROM keuntungan_investasi 
+                   WHERE tanggal_keuntungan BETWEEN :start_date AND :end_date";
+$stmt = $koneksi->prepare($sql_keuntungan);
+$stmt->execute(['start_date' => $start_date, 'end_date' => $end_date]);
+$total_keuntungan = (float)$stmt->fetch()['total'];
 
-// Total Aset
-$total_aset = $saldo_kas + $total_nilai_investasi_aktif;
-$persentase_kas = $total_aset > 0 ? ($saldo_kas / $total_aset * 100) : 0;
-$persentase_investasi = $total_aset > 0 ? ($total_nilai_investasi_aktif / $total_aset * 100) : 0;
+$sql_kerugian = "SELECT COALESCE(SUM(jumlah_kerugian), 0) as total FROM kerugian_investasi 
+                 WHERE tanggal_kerugian BETWEEN :start_date AND :end_date";
+$stmt = $koneksi->prepare($sql_kerugian);
+$stmt->execute(['start_date' => $start_date, 'end_date' => $end_date]);
+$total_kerugian = (float)$stmt->fetch()['total'];
 
-/* ========================================
-   QUERY KEUNTUNGAN & KERUGIAN GLOBAL
-======================================== */
-$sql_total_keuntungan = "SELECT COALESCE(SUM(jumlah_keuntungan), 0) as total FROM keuntungan_investasi";
-$stmt_total_keuntungan = $koneksi->query($sql_total_keuntungan);
-$total_keuntungan_global = (float)$stmt_total_keuntungan->fetch()['total'];
-
-$sql_total_kerugian = "SELECT COALESCE(SUM(jumlah_kerugian), 0) as total FROM kerugian_investasi";
-$stmt_total_kerugian = $koneksi->query($sql_total_kerugian);
-$total_kerugian_global = (float)$stmt_total_kerugian->fetch()['total'];
-
-$net_profit = $total_keuntungan_global - $total_kerugian_global;
-$roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugian_aktif) / $total_modal_aktif * 100) : 0;
+$net_profit = $total_keuntungan - $total_kerugian;
+$total_aset = $saldo_kas + $total_nilai_investasi;
+$roi_global = $total_modal > 0 ? ($net_profit / $total_modal * 100) : 0;
 
 /* ========================================
-   BREAKDOWN KATEGORI
+   BREAKDOWN PER KATEGORI
 ======================================== */
-$breakdown_kategori = [];
-foreach ($investasi_aktif as $inv) {
-    $kategori = $inv['nama_kategori'];
-    if (!isset($breakdown_kategori[$kategori])) {
-        $breakdown_kategori[$kategori] = [
-            'nilai' => 0,
-            'count' => 0,
-            'modal' => 0,
-            'keuntungan' => 0,
-            'kerugian' => 0
-        ];
-    }
-    $breakdown_kategori[$kategori]['nilai'] += $inv['nilai_sekarang'];
-    $breakdown_kategori[$kategori]['modal'] += $inv['modal_investasi'];
-    $breakdown_kategori[$kategori]['keuntungan'] += $inv['total_keuntungan'];
-    $breakdown_kategori[$kategori]['kerugian'] += $inv['total_kerugian'];
-    $breakdown_kategori[$kategori]['count']++;
-}
-uasort($breakdown_kategori, fn($a, $b) => $b['nilai'] - $a['nilai']);
-
-/* ========================================
-   BREAKDOWN SUMBER
-======================================== */
-$sql_sumber_keuntungan = "
-    SELECT sumber_keuntungan, COUNT(*) as jumlah, SUM(jumlah_keuntungan) as total
-    FROM keuntungan_investasi GROUP BY sumber_keuntungan ORDER BY total DESC
+$sql_kategori = "
+    SELECT 
+        k.nama_kategori,
+        COUNT(DISTINCT i.id) as jumlah_investasi,
+        COALESCE(SUM(i.jumlah), 0) as total_modal,
+        COALESCE(SUM(ku_agg.total_keuntungan), 0) as total_keuntungan,
+        COALESCE(SUM(kr_agg.total_kerugian), 0) as total_kerugian,
+        (COALESCE(SUM(i.jumlah), 0) + COALESCE(SUM(ku_agg.total_keuntungan), 0) - COALESCE(SUM(kr_agg.total_kerugian), 0)) as nilai_total
+    FROM kategori k
+    LEFT JOIN investasi i ON k.id = i.kategori_id AND i.status = 'aktif'
+    LEFT JOIN (
+        SELECT investasi_id, SUM(jumlah_keuntungan) AS total_keuntungan
+        FROM keuntungan_investasi GROUP BY investasi_id
+    ) ku_agg ON i.id = ku_agg.investasi_id
+    LEFT JOIN (
+        SELECT investasi_id, SUM(jumlah_kerugian) AS total_kerugian
+        FROM kerugian_investasi GROUP BY investasi_id
+    ) kr_agg ON i.id = kr_agg.investasi_id
+    GROUP BY k.id, k.nama_kategori
+    HAVING jumlah_investasi > 0
+    ORDER BY nilai_total DESC
 ";
-$sumber_keuntungan_stats = $koneksi->query($sql_sumber_keuntungan)->fetchAll();
-
-$sql_sumber_kerugian = "
-    SELECT sumber_kerugian, COUNT(*) as jumlah, SUM(jumlah_kerugian) as total
-    FROM kerugian_investasi GROUP BY sumber_kerugian ORDER BY total DESC
-";
-$sumber_kerugian_stats = $koneksi->query($sql_sumber_kerugian)->fetchAll();
-
-$total_transaksi_keuntungan = array_sum(array_column($sumber_keuntungan_stats, 'jumlah'));
-$total_transaksi_kerugian = array_sum(array_column($sumber_kerugian_stats, 'jumlah'));
+$kategori_breakdown = $koneksi->query($sql_kategori)->fetchAll();
 
 /* ========================================
-   RECENT DATA
+   MONTHLY PERFORMANCE
 ======================================== */
-$investasi_list = array_slice($investasi_all, 0);
-$cash_transactions = get_recent_cash_transactions($koneksi);
-$sales_list = get_sale_transactions($koneksi);
+$sql_monthly = "
+    SELECT 
+        DATE_FORMAT(tanggal_keuntungan, '%Y-%m') as bulan,
+        SUM(jumlah_keuntungan) as total_keuntungan
+    FROM keuntungan_investasi
+    WHERE tanggal_keuntungan BETWEEN :start_date AND :end_date
+    GROUP BY bulan
+    ORDER BY bulan ASC
+";
+$stmt = $koneksi->prepare($sql_monthly);
+$stmt->execute(['start_date' => $start_date, 'end_date' => $end_date]);
+$monthly_profit = $stmt->fetchAll();
+
+$sql_monthly_loss = "
+    SELECT 
+        DATE_FORMAT(tanggal_kerugian, '%Y-%m') as bulan,
+        SUM(jumlah_kerugian) as total_kerugian
+    FROM kerugian_investasi
+    WHERE tanggal_kerugian BETWEEN :start_date AND :end_date
+    GROUP BY bulan
+    ORDER BY bulan ASC
+";
+$stmt = $koneksi->prepare($sql_monthly_loss);
+$stmt->execute(['start_date' => $start_date, 'end_date' => $end_date]);
+$monthly_loss = $stmt->fetchAll();
+
+/* ========================================
+   TOP PERFORMERS
+======================================== */
+$sql_top = "
+    SELECT 
+        i.judul_investasi,
+        k.nama_kategori,
+        i.jumlah as modal,
+        COALESCE(ku_agg.total_keuntungan, 0) as keuntungan,
+        COALESCE(kr_agg.total_kerugian, 0) as kerugian,
+        (COALESCE(ku_agg.total_keuntungan, 0) - COALESCE(kr_agg.total_kerugian, 0)) as net_profit,
+        CASE 
+            WHEN i.jumlah > 0 THEN ((COALESCE(ku_agg.total_keuntungan, 0) - COALESCE(kr_agg.total_kerugian, 0)) / i.jumlah * 100)
+            ELSE 0
+        END as roi
+    FROM investasi i
+    JOIN kategori k ON i.kategori_id = k.id
+    LEFT JOIN (
+        SELECT investasi_id, SUM(jumlah_keuntungan) AS total_keuntungan
+        FROM keuntungan_investasi GROUP BY investasi_id
+    ) ku_agg ON i.id = ku_agg.investasi_id
+    LEFT JOIN (
+        SELECT investasi_id, SUM(jumlah_kerugian) AS total_kerugian
+        FROM kerugian_investasi GROUP BY investasi_id
+    ) kr_agg ON i.id = kr_agg.investasi_id
+    WHERE i.status = 'aktif'
+    ORDER BY roi DESC
+    LIMIT 10
+";
+$top_performers = $koneksi->query($sql_top)->fetchAll();
+
+/* ========================================
+   CASH FLOW SUMMARY
+======================================== */
 $cash_by_category = get_cash_by_category($koneksi);
-
-$keuntungan_list = $koneksi->query("
-    SELECT ki.*, i.judul_investasi, k.nama_kategori
-    FROM keuntungan_investasi ki
-    JOIN investasi i ON ki.investasi_id = i.id
-    JOIN kategori k ON ki.kategori_id = k.id
-    ORDER BY ki.tanggal_keuntungan DESC 
-")->fetchAll();
-
-$kerugian_list = $koneksi->query("
-    SELECT kr.*, i.judul_investasi, k.nama_kategori
-    FROM kerugian_investasi kr
-    JOIN investasi i ON kr.investasi_id = i.id
-    JOIN kategori k ON kr.kategori_id = k.id
-    ORDER BY kr.tanggal_kerugian DESC 
-")->fetchAll();
-
-$flash = $_SESSION['_flash'] ?? null;
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Dashboard Admin - SAZEN Investment Portfolio Manager Ultimate">
-    <title>Dashboard Admin - SAZEN v3.0 Ultimate</title>
+    <title>Laporan & Analisis - SAZEN v3.0</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="../css/dashboard.css">
+    <style>
+        /* ============================================
+           STATS GRID - 8 CARDS COMPLETE LAYOUT
+        ============================================ */
+        .stats-grid-complete {
+            display: grid;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        /* Desktop Large (>= 1400px) - 4 kolom */
+        @media (min-width: 1400px) {
+            .stats-grid-complete {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        /* Desktop Medium (1024px - 1399px) - 3 kolom */
+        @media (min-width: 1024px) and (max-width: 1399px) {
+            .stats-grid-complete {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        /* Tablet (768px - 1023px) - 2 kolom */
+        @media (min-width: 768px) and (max-width: 1023px) {
+            .stats-grid-complete {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        /* Mobile (<768px) - 1 kolom */
+        @media (max-width: 767px) {
+            .stats-grid-complete {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+        }
+
+        /* Fallback untuk layar sangat besar */
+        @media (min-width: 1920px) {
+            .stats-grid-complete {
+                grid-template-columns: repeat(4, 1fr);
+                max-width: 1800px;
+            }
+        }
+
+        /* Stat Card Enhanced */
+        .stat-card {
+            background: var(--surface-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-xl);
+            padding: 1.5rem;
+            transition: all var(--transition-normal);
+            position: relative;
+            overflow: hidden;
+            min-height: 160px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+            opacity: 0;
+            transition: opacity var(--transition-fast);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary-color);
+        }
+
+        .stat-card:hover::before {
+            opacity: 1;
+        }
+
+        /* Stat Header */
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
+            color: var(--primary-color);
+            transition: all var(--transition-normal);
+        }
+
+        .stat-card:hover .stat-icon {
+            transform: scale(1.1) rotate(5deg);
+        }
+
+        .stat-trend {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.375rem 0.75rem;
+            border-radius: var(--radius-full);
+            font-size: 0.75rem;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .stat-trend.positive {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success-color);
+        }
+
+        .stat-trend.negative {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger-color);
+        }
+
+        .stat-badge {
+            padding: 0.375rem 0.75rem;
+            border-radius: var(--radius-full);
+            font-size: 0.75rem;
+            font-weight: 700;
+            background: var(--primary-gradient);
+            color: white;
+        }
+
+        .stat-pulse {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--success-color);
+            animation: pulse 2s ease-in-out infinite;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        }
+
+        .stat-pulse.danger {
+            background: var(--danger-color);
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+            50% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+            }
+        }
+
+        /* Stat Body */
+        .stat-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Stat Value - Enhanced Visibility */
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            line-height: 1.2;
+            font-feature-settings: 'tnum';
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            margin: 0.5rem 0;
+        }
+
+        .stat-value.highlight {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 900;
+        }
+
+        /* Fallback untuk browser yang tidak support background-clip */
+        @supports not (background-clip: text) or not (-webkit-background-clip: text) {
+            .stat-value.highlight {
+                color: #667eea;
+                background: none;
+                -webkit-text-fill-color: currentColor;
+            }
+        }
+
+        /* Firefox specific fix */
+        @-moz-document url-prefix() {
+            .stat-value.highlight {
+                color: #667eea;
+                background: none;
+                -webkit-text-fill-color: currentColor;
+            }
+        }
+
+        .stat-value.positive {
+            color: var(--success-color);
+        }
+
+        .stat-value.negative {
+            color: var(--danger-color);
+        }
+
+        .stat-footer {
+            font-size: 0.813rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* Card Color Variants */
+        .stat-card.stat-primary .stat-icon {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(99, 102, 241, 0.05));
+            color: #6366f1;
+        }
+
+        .stat-card.stat-success .stat-icon {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05));
+            color: var(--success-color);
+        }
+
+        .stat-card.stat-danger .stat-icon {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05));
+            color: var(--danger-color);
+        }
+
+        .stat-card.stat-warning .stat-icon {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(251, 191, 36, 0.05));
+            color: #fbbf24;
+        }
+
+        .stat-card.stat-info .stat-icon {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.05));
+            color: #3b82f6;
+        }
+
+        .stat-card.stat-purple .stat-icon {
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.05));
+            color: #a855f7;
+        }
+
+        .stat-card.stat-orange .stat-icon {
+            background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(249, 115, 22, 0.05));
+            color: #f97316;
+        }
+
+        .stat-card.stat-gradient {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(168, 85, 247, 0.05));
+        }
+
+        .stat-card.stat-gradient .stat-icon {
+            background: var(--primary-gradient);
+            color: white;
+        }
+
+        /* Additional Styles for Laporan */
+        .filter-section {
+            background: var(--surface-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-xl);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .filter-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: flex-end;
+        }
+
+        .form-group {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--surface-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-size: 0.9375rem;
+            transition: all var(--transition-fast);
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            background: var(--surface-hover);
+        }
+
+        .btn-primary {
+            padding: 0.75rem 2rem;
+            background: var(--primary-color);
+            border: none;
+            border-radius: var(--radius-md);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-secondary {
+            padding: 0.75rem 2rem;
+            background: var(--surface-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .btn-secondary:hover {
+            background: var(--surface-hover);
+        }
+
+        .chart-container {
+            background: var(--surface-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-xl);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .performance-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .performance-table th {
+            background: var(--surface-secondary);
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .performance-table td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .performance-table tr:hover {
+            background: var(--surface-secondary);
+        }
+
+        .roi-badge {
+            padding: 0.375rem 0.75rem;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .roi-positive {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+        }
+
+        .roi-negative {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .filter-form {
+                flex-direction: column;
+            }
+
+            .form-group {
+                width: 100%;
+            }
+
+            .performance-table {
+                font-size: 0.875rem;
+            }
+
+            .performance-table th,
+            .performance-table td {
+                padding: 0.75rem 0.5rem;
+            }
+        }
+    </style>
 </head>
 <body>
 
@@ -206,7 +632,7 @@ $flash = $_SESSION['_flash'] ?? null;
     <div class="loading-screen" id="loadingScreen">
         <div class="loading-content">
             <div class="loading-spinner"></div>
-            <div class="loading-text">Memuat Dashboard...</div>
+            <div class="loading-text">Memuat Laporan...</div>
         </div>
     </div>
 
@@ -223,45 +649,45 @@ $flash = $_SESSION['_flash'] ?? null;
         </div>
 
         <nav class="sidebar-nav">
-            <a href="dashboard.php" class="nav-item active">
+            <a href="../dashboard.php" class="nav-item">
                 <i class="fas fa-home"></i>
                 <span class="nav-text">Dashboard</span>
             </a>
-            <a href="index.php" class="nav-item" target="_blank">
+            <a href="../index.php" class="nav-item" target="_blank">
                 <i class="fas fa-eye"></i>
                 <span class="nav-text">Lihat Portfolio</span>
             </a>
             
             <div class="nav-divider"><span>Manajemen Data</span></div>
             
-            <a href="admin/upload_investasi.php" class="nav-item">
+            <a href="upload_investasi.php" class="nav-item">
                 <i class="fas fa-plus-circle"></i>
                 <span class="nav-text">Tambah Investasi</span>
             </a>
-            <a href="admin/upload_keuntungan.php" class="nav-item">
+            <a href="upload_keuntungan.php" class="nav-item">
                 <i class="fas fa-arrow-trend-up"></i>
                 <span class="nav-text">Tambah Keuntungan</span>
             </a>
-            <a href="admin/upload_kerugian.php" class="nav-item">
+            <a href="upload_kerugian.php" class="nav-item">
                 <i class="fas fa-arrow-trend-down"></i>
                 <span class="nav-text">Tambah Kerugian</span>
             </a>
-            <a href="admin/transaksi_jual.php" class="nav-item">
+            <a href="transaksi_jual.php" class="nav-item">
                 <i class="fas fa-handshake"></i>
                 <span class="nav-text">Jual Investasi</span>
             </a>
-            <a href="admin/cash_balance.php" class="nav-item">
+            <a href="cash_balance.php" class="nav-item">
                 <i class="fas fa-wallet"></i>
                 <span class="nav-text">Kelola Kas</span>
             </a>
             
             <div class="nav-divider"><span>Lainnya</span></div>
             
-            <a href="admin/laporan.php" class="nav-item">
+            <a href="laporan.php" class="nav-item active">
                 <i class="fas fa-chart-bar"></i>
                 <span class="nav-text">Laporan</span>
             </a>
-            <a href="admin/pengaturan.php" class="nav-item">
+            <a href="pengaturan.php" class="nav-item">
                 <i class="fas fa-cog"></i>
                 <span class="nav-text">Pengaturan</span>
             </a>
@@ -292,8 +718,8 @@ $flash = $_SESSION['_flash'] ?? null;
                     <i class="fas fa-bars"></i>
                 </button>
                 <div class="header-title">
-                    <h1>Dashboard Admin</h1>
-                    <p>Selamat datang, <strong><?= htmlspecialchars($username) ?></strong></p>
+                    <h1>Laporan & Analisis</h1>
+                    <p>Periode: <?= date('d M Y', strtotime($start_date)) ?> - <?= date('d M Y', strtotime($end_date)) ?></p>
                 </div>
             </div>
             <div class="header-right">
@@ -308,26 +734,47 @@ $flash = $_SESSION['_flash'] ?? null;
         </header>
 
         <!-- Flash Messages -->
-        <?php if ($flash): ?>
-            <div class="flash-message flash-<?= $flash['type'] ?>" id="flashMessage">
-                <div class="flash-icon">
-                    <i class="fas fa-<?= $flash['type'] == 'success' ? 'check-circle' : ($flash['type'] == 'error' ? 'exclamation-circle' : 'info-circle') ?>"></i>
-                </div>
-                <div class="flash-content">
-                    <div class="flash-text"><?= htmlspecialchars($flash['message']) ?></div>
-                </div>
-                <button class="flash-close" onclick="closeFlash()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-        <?php endif; ?>
+        <?= flash('success') ?>
+        <?= flash('error') ?>
+        <?= flash('warning') ?>
+        <?= flash('info') ?>
 
         <div class="container">
 
-            <!-- Statistics Overview (8 Cards) -->
+            <!-- Filter Section -->
+            <section class="filter-section">
+                <form method="GET" class="filter-form">
+                    <div class="form-group">
+                        <label class="form-label">Tanggal Mulai</label>
+                        <input type="date" name="start_date" class="form-input" value="<?= $start_date ?>" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tanggal Akhir</label>
+                        <input type="date" name="end_date" class="form-input" value="<?= $end_date ?>" required>
+                    </div>
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-filter"></i> Filter
+                    </button>
+                    <button type="button" class="btn-secondary" onclick="window.location.href='laporan.php'">
+                        <i class="fas fa-redo"></i> Reset
+                    </button>
+                </form>
+            </section>
+
+            <!-- Export Buttons -->
+            <div class="export-buttons">
+                <button class="btn-primary" onclick="window.print()">
+                    <i class="fas fa-print"></i> Cetak Laporan
+                </button>
+                <button class="btn-secondary" onclick="exportToExcel()">
+                    <i class="fas fa-file-excel"></i> Export Excel
+                </button>
+            </div>
+
+            <!-- Summary Statistics - 8 Cards Complete -->
             <section class="stats-overview">
-                <div class="stats-grid-enhanced">
-                    <!-- Saldo Kas -->
+                <div class="stats-grid-complete">
+                    <!-- Card 1: Saldo Kas -->
                     <div class="stat-card stat-warning">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-wallet"></i></div>
@@ -338,48 +785,47 @@ $flash = $_SESSION['_flash'] ?? null;
                         <div class="stat-body">
                             <div class="stat-label">Saldo Kas</div>
                             <div class="stat-value <?= $saldo_kas >= 0 ? 'positive' : 'negative' ?>"><?= format_currency($saldo_kas) ?></div>
-                            <div class="stat-footer"><?= number_format($persentase_kas, 1) ?>% dari total aset</div>
+                            <div class="stat-footer"><?= number_format(($total_aset > 0 ? ($saldo_kas / $total_aset * 100) : 0), 1) ?>% dari total aset</div>
                         </div>
                     </div>
 
-                    <!-- Modal Investasi -->
+                    <!-- Card 2: Modal Investasi -->
                     <div class="stat-card stat-info">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-hand-holding-dollar"></i></div>
                             <div class="stat-trend positive">
-                                <i class="fas fa-arrow-up"></i>
+                                <i class="fas fa-coins"></i>
                                 <span><?= count($investasi_aktif) ?></span>
                             </div>
                         </div>
                         <div class="stat-body">
                             <div class="stat-label">Modal Investasi</div>
-                            <div class="stat-value"><?= format_currency($total_modal_aktif) ?></div>
+                            <div class="stat-value"><?= format_currency($total_modal) ?></div>
                             <div class="stat-footer">Modal yang ditanamkan</div>
                         </div>
                     </div>
 
-                    <!-- Nilai Investasi -->
+                    <!-- Card 3: Nilai Investasi -->
                     <div class="stat-card stat-primary">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-chart-line"></i></div>
+                            <div class="stat-badge"><?= count($investasi_aktif) ?></div>
                         </div>
                         <div class="stat-body">
                             <div class="stat-label">Nilai Investasi</div>
-                            <div class="stat-value"><?= format_currency($total_nilai_investasi_aktif) ?></div>
+                            <div class="stat-value"><?= format_currency($total_nilai_investasi) ?></div>
                             <div class="stat-footer"><?= count($investasi_aktif) ?> Portfolio Aktif</div>
                         </div>
                     </div>
 
-                    <!-- Total Aset -->
+                    <!-- Card 4: Total Aset -->
                     <div class="stat-card stat-purple">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-coins"></i></div>
-                            <?php if ($roi_global != 0): ?>
                             <div class="stat-trend <?= $roi_global >= 0 ? 'positive' : 'negative' ?>">
                                 <i class="fas fa-arrow-<?= $roi_global >= 0 ? 'up' : 'down' ?>"></i>
                                 <span><?= number_format(abs($roi_global), 1) ?>%</span>
                             </div>
-                            <?php endif; ?>
                         </div>
                         <div class="stat-body">
                             <div class="stat-label">Total Aset</div>
@@ -388,34 +834,40 @@ $flash = $_SESSION['_flash'] ?? null;
                         </div>
                     </div>
 
-                    <!-- Total Keuntungan -->
+                    <!-- Card 5: Total Keuntungan -->
                     <div class="stat-card stat-success">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-arrow-trend-up"></i></div>
+                            <div class="stat-pulse"></div>
                         </div>
                         <div class="stat-body">
                             <div class="stat-label">Total Keuntungan</div>
-                            <div class="stat-value positive"><?= format_currency($total_keuntungan_global) ?></div>
-                            <div class="stat-footer"><?= $total_transaksi_keuntungan ?> Transaksi</div>
+                            <div class="stat-value positive"><?= format_currency($total_keuntungan) ?></div>
+                            <div class="stat-footer">Periode Terpilih</div>
                         </div>
                     </div>
 
-                    <!-- Total Kerugian -->
+                    <!-- Card 6: Total Kerugian -->
                     <div class="stat-card stat-danger">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-arrow-trend-down"></i></div>
+                            <div class="stat-pulse danger"></div>
                         </div>
                         <div class="stat-body">
                             <div class="stat-label">Total Kerugian</div>
-                            <div class="stat-value negative"><?= format_currency($total_kerugian_global) ?></div>
-                            <div class="stat-footer"><?= $total_transaksi_kerugian ?> Transaksi</div>
+                            <div class="stat-value negative"><?= format_currency($total_kerugian) ?></div>
+                            <div class="stat-footer">Periode Terpilih</div>
                         </div>
                     </div>
 
-                    <!-- Net Profit -->
+                    <!-- Card 7: Net Profit -->
                     <div class="stat-card stat-gradient">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-trophy"></i></div>
+                            <div class="stat-trend <?= $net_profit >= 0 ? 'positive' : 'negative' ?>">
+                                <i class="fas fa-arrow-<?= $net_profit >= 0 ? 'up' : 'down' ?>"></i>
+                                <span><?= number_format(abs($roi_global), 1) ?>%</span>
+                            </div>
                         </div>
                         <div class="stat-body">
                             <div class="stat-label">Net Profit</div>
@@ -424,13 +876,13 @@ $flash = $_SESSION['_flash'] ?? null;
                         </div>
                     </div>
 
-                    <!-- Total Penjualan (NEW) -->
-                    <div class="stat-card stat-warning">
+                    <!-- Card 8: Total Penjualan -->
+                    <div class="stat-card stat-orange">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-handshake"></i></div>
                             <div class="stat-trend <?= $sales_profit_loss >= 0 ? 'positive' : 'negative' ?>">
                                 <i class="fas fa-arrow-<?= $sales_profit_loss >= 0 ? 'up' : 'down' ?>"></i>
-                                <span><?= number_format($avg_roi_sales, 1) ?>%</span>
+                                <span><?= $sales_stats ? number_format($sales_stats['avg_roi'], 1) : '0.0' ?>%</span>
                             </div>
                         </div>
                         <div class="stat-body">
@@ -442,461 +894,160 @@ $flash = $_SESSION['_flash'] ?? null;
                 </div>
             </section>
 
-            <!-- Asset Allocation -->
-            <section class="asset-allocation-dashboard">
-                <div class="section-header-inline">
-                    <h2 class="section-title">
-                        <i class="fas fa-chart-pie"></i>
-                        Alokasi Aset
+            <!-- Category Breakdown -->
+            <?php if (count($kategori_breakdown) > 0): ?>
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <i class="fas fa-layer-group"></i>
+                        Performance per Kategori
                     </h2>
                 </div>
-                <div class="allocation-container-dashboard">
-                    <div class="allocation-visual">
-                        <div class="allocation-bar-dashboard">
-                            <div class="bar-segment cash-segment" style="width: <?= $persentase_kas ?>%">
-                                <?php if ($persentase_kas > 10): ?>
-                                <span><?= number_format($persentase_kas, 1) ?>%</span>
-                                <?php endif; ?>
-                            </div>
-                            <div class="bar-segment investment-segment" style="width: <?= $persentase_investasi ?>%">
-                                <?php if ($persentase_investasi > 10): ?>
-                                <span><?= number_format($persentase_investasi, 1) ?>%</span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="allocation-legend-dashboard">
-                        <div class="legend-item-dashboard">
-                            <div class="legend-color cash-color"></div>
-                            <div class="legend-info">
-                                <span class="legend-label">Kas</span>
-                                <span class="legend-value"><?= format_currency($saldo_kas) ?></span>
-                            </div>
-                        </div>
-                        <div class="legend-item-dashboard">
-                            <div class="legend-color investment-color"></div>
-                            <div class="legend-info">
-                                <span class="legend-label">Investasi</span>
-                                <span class="legend-value"><?= format_currency($total_nilai_investasi_aktif) ?></span>
-                            </div>
-                        </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="performance-table">
+                            <thead>
+                                <tr>
+                                    <th>Kategori</th>
+                                    <th>Jumlah</th>
+                                    <th>Modal</th>
+                                    <th>Keuntungan</th>
+                                    <th>Kerugian</th>
+                                    <th>Nilai Total</th>
+                                    <th>ROI</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($kategori_breakdown as $kat): 
+                                    $roi = $kat['total_modal'] > 0 ? (($kat['total_keuntungan'] - $kat['total_kerugian']) / $kat['total_modal'] * 100) : 0;
+                                ?>
+                                <tr>
+                                    <td><strong><?= htmlspecialchars($kat['nama_kategori']) ?></strong></td>
+                                    <td><?= $kat['jumlah_investasi'] ?> inv</td>
+                                    <td><?= format_currency($kat['total_modal']) ?></td>
+                                    <td class="positive">+<?= format_currency($kat['total_keuntungan']) ?></td>
+                                    <td class="negative">-<?= format_currency($kat['total_kerugian']) ?></td>
+                                    <td><strong><?= format_currency($kat['nilai_total']) ?></strong></td>
+                                    <td>
+                                        <span class="roi-badge <?= $roi >= 0 ? 'roi-positive' : 'roi-negative' ?>">
+                                            <?= $roi >= 0 ? '+' : '' ?><?= number_format($roi, 2) ?>%
+                                        </span>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>
+            <?php endif; ?>
 
-            <!-- Quick Actions -->
-            <section class="quick-actions">
-                <h2 class="section-title">
-                    <i class="fas fa-bolt"></i>
-                    Aksi Cepat
-                </h2>
-                <div class="actions-grid">
-                    <a href="admin/upload_investasi.php" class="action-card">
-                        <div class="action-icon primary">
-                            <i class="fas fa-plus"></i>
-                        </div>
-                        <div class="action-content">
-                            <h3>Tambah Investasi</h3>
-                            <p>Catat investasi baru</p>
-                        </div>
-                    </a>
-
-                    <a href="admin/transaksi_jual.php" class="action-card">
-                        <div class="action-icon warning">
-                            <i class="fas fa-handshake"></i>
-                        </div>
-                        <div class="action-content">
-                            <h3>Jual Investasi</h3>
-                            <p>Proses penjualan</p>
-                        </div>
-                    </a>
-
-                    <a href="admin/cash_balance.php" class="action-card">
-                        <div class="action-icon success">
-                            <i class="fas fa-wallet"></i>
-                        </div>
-                        <div class="action-content">
-                            <h3>Kelola Kas</h3>
-                            <p>Transaksi kas</p>
-                        </div>
-                    </a>
-
-                    <a href="admin/laporan.php" class="action-card">
-                        <div class="action-icon info">
-                            <i class="fas fa-chart-bar"></i>
-                        </div>
-                        <div class="action-content">
-                            <h3>Lihat Laporan</h3>
-                            <p>Analisis lengkap</p>
-                        </div>
-                    </a>
+            <!-- Top Performers -->
+            <?php if (count($top_performers) > 0): ?>
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <i class="fas fa-star"></i>
+                        Top 10 Investasi Terbaik
+                    </h2>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="performance-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Judul Investasi</th>
+                                    <th>Kategori</th>
+                                    <th>Modal</th>
+                                    <th>Net Profit</th>
+                                    <th>ROI</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($top_performers as $index => $inv): ?>
+                                <tr>
+                                    <td><strong><?= $index + 1 ?></strong></td>
+                                    <td><?= htmlspecialchars($inv['judul_investasi']) ?></td>
+                                    <td><?= htmlspecialchars($inv['nama_kategori']) ?></td>
+                                    <td><?= format_currency($inv['modal']) ?></td>
+                                    <td class="<?= $inv['net_profit'] >= 0 ? 'positive' : 'negative' ?>">
+                                        <?= $inv['net_profit'] >= 0 ? '+' : '' ?><?= format_currency($inv['net_profit']) ?>
+                                    </td>
+                                    <td>
+                                        <span class="roi-badge <?= $inv['roi'] >= 0 ? 'roi-positive' : 'roi-negative' ?>">
+                                            <?= $inv['roi'] >= 0 ? '+' : '' ?><?= number_format($inv['roi'], 2) ?>%
+                                        </span>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
+            <?php endif; ?>
 
-            <!-- Cash Balance Overview -->
+            <!-- Cash Flow by Category -->
             <?php if (count($cash_by_category) > 0): ?>
-            <section class="card cash-overview">
+            <section class="card">
                 <div class="card-header">
                     <h2 class="card-title">
                         <i class="fas fa-coins"></i>
-                        Overview Kas per Kategori
+                        Cash Flow per Kategori
                     </h2>
-                    <a href="admin/cash_balance.php" class="btn-link">Lihat Semua</a>
                 </div>
                 <div class="card-body">
-                    <div class="cash-grid">
-                        <?php foreach ($cash_by_category as $cash_cat): ?>
-                            <div class="cash-item">
-                                <div class="cash-label">
-                                    <?= ucfirst(str_replace('_', ' ', $cash_cat['kategori'])) ?>
-                                </div>
-                                <div class="cash-value <?= $cash_cat['saldo'] >= 0 ? 'positive' : 'negative' ?>">
-                                    <?= format_currency($cash_cat['saldo']) ?>
-                                </div>
-                                <div class="cash-detail">
-                                    <span class="in">↑ <?= format_currency($cash_cat['total_masuk']) ?></span>
-                                    <span class="out">↓ <?= format_currency($cash_cat['total_keluar']) ?></span>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
+                    <div class="table-responsive">
+                        <table class="performance-table">
+                            <thead>
+                                <tr>
+                                    <th>Kategori</th>
+                                    <th>Kas Masuk</th>
+                                    <th>Kas Keluar</th>
+                                    <th>Saldo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($cash_by_category as $cash): ?>
+                                <tr>
+                                    <td><strong><?= ucfirst(str_replace('_', ' ', $cash['kategori'])) ?></strong></td>
+                                    <td class="positive">+<?= format_currency($cash['total_masuk']) ?></td>
+                                    <td class="negative">-<?= format_currency($cash['total_keluar']) ?></td>
+                                    <td class="<?= $cash['saldo'] >= 0 ? 'positive' : 'negative' ?>">
+                                        <strong><?= format_currency($cash['saldo']) ?></strong>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>
             <?php endif; ?>
 
-            <!-- Category Breakdown -->
-            <?php if (count($breakdown_kategori) > 0): ?>
-            <section class="category-breakdown-section">
+            <!-- Monthly Performance Chart -->
+            <?php if (count($monthly_profit) > 0 || count($monthly_loss) > 0): ?>
+            <section class="chart-container">
                 <h2 class="section-title">
-                    <i class="fas fa-layer-group"></i>
-                    Breakdown per Kategori
+                    <i class="fas fa-chart-bar"></i>
+                    Performance Bulanan
                 </h2>
-                <div class="category-breakdown-grid">
-                    <?php 
-                    $colors = ['#667eea', '#f093fb', '#4facfe', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-                    $colorIndex = 0;
-                    foreach ($breakdown_kategori as $kategori => $data): 
-                        $persentase = $total_nilai_investasi_aktif > 0 ? ($data['nilai'] / $total_nilai_investasi_aktif * 100) : 0;
-                        $roi_kategori = $data['modal'] > 0 ? (($data['keuntungan'] - $data['kerugian']) / $data['modal'] * 100) : 0;
-                        $color = $colors[$colorIndex % count($colors)];
-                        $colorIndex++;
-                    ?>
-                    <div class="category-card">
-                        <div class="category-card-header">
-                            <div class="category-icon" style="background: linear-gradient(135deg, <?= $color ?>, <?= $color ?>99);">
-                                <i class="fas fa-tag"></i>
-                            </div>
-                            <div class="category-info-header">
-                                <h4><?= htmlspecialchars($kategori) ?></h4>
-                                <span><?= $data['count'] ?> Investasi</span>
-                            </div>
-                            <div class="category-roi <?= $roi_kategori >= 0 ? 'positive' : 'negative' ?>">
-                                <?= number_format($roi_kategori, 1) ?>%
-                            </div>
-                        </div>
-                        <div class="category-card-body">
-                            <div class="category-stat">
-                                <span class="label">Nilai</span>
-                                <span class="value"><?= format_currency($data['nilai']) ?></span>
-                            </div>
-                            <div class="category-stat">
-                                <span class="label">Persentase</span>
-                                <span class="value"><?= number_format($persentase, 1) ?>%</span>
-                            </div>
-                        </div>
-                        <div class="category-progress-bar">
-                            <div class="progress-fill" style="width: <?= $persentase ?>%; background: <?= $color ?>;"></div>
-                        </div>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
+                <canvas id="monthlyChart" style="max-height: 400px;"></canvas>
             </section>
             <?php endif; ?>
-
-            <!-- Analytics Grid -->
-            <div class="dashboard-grid">
-                <!-- Source Breakdown -->
-                <section class="card source-breakdown">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <i class="fas fa-layer-group"></i>
-                            Breakdown Sumber
-                        </h2>
-                    </div>
-                    <div class="card-body">
-                        <?php if (count($sumber_keuntungan_stats) > 0): ?>
-                            <div class="breakdown-section">
-                                <h3 class="breakdown-title">Keuntungan</h3>
-                                <div class="breakdown-list">
-                                    <?php foreach ($sumber_keuntungan_stats as $sumber): ?>
-                                        <div class="breakdown-item">
-                                            <div class="breakdown-info">
-                                                <i class="fas fa-circle-dot"></i>
-                                                <span><?= ucfirst(str_replace('_', ' ', $sumber['sumber_keuntungan'])) ?></span>
-                                            </div>
-                                            <div class="breakdown-value positive">
-                                                +<?= format_currency($sumber['total']) ?>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-
-                        <?php if (count($sumber_kerugian_stats) > 0): ?>
-                            <div class="breakdown-section">
-                                <h3 class="breakdown-title">Kerugian</h3>
-                                <div class="breakdown-list">
-                                    <?php foreach ($sumber_kerugian_stats as $sumber): ?>
-                                        <div class="breakdown-item">
-                                            <div class="breakdown-info">
-                                                <i class="fas fa-circle-dot"></i>
-                                                <span><?= ucfirst(str_replace('_', ' ', $sumber['sumber_kerugian'])) ?></span>
-                                            </div>
-                                            <div class="breakdown-value negative">
-                                                -<?= format_currency($sumber['total']) ?>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </section>
-            </div>
-
-            <!-- Recent Data Grid -->
-            <div class="recent-data-grid">
-                
-                <!-- Recent Investments -->
-                <section class="card recent-investments">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <i class="fas fa-briefcase"></i>
-                            Investasi Terbaru
-                        </h2>
-                    </div>
-                    <div class="card-body">
-                        <?php if (count($investasi_list) > 0): ?>
-                            <div class="data-table">
-                                <?php foreach ($investasi_list as $inv): ?>
-                                    <div class="data-row">
-                                        <div class="data-main">
-                                            <h4><?= htmlspecialchars($inv['judul_investasi']) ?></h4>
-                                            <p>
-                                                <?= htmlspecialchars($inv['nama_kategori']) ?> • 
-                                                <?= date('d M Y', strtotime($inv['tanggal_investasi'])) ?> •
-                                                <span class="badge badge-<?= $inv['status'] == 'aktif' ? 'success' : ($inv['status'] == 'terjual' ? 'warning' : 'secondary') ?>">
-                                                    <?= ucfirst($inv['status']) ?>
-                                                </span>
-                                            </p>
-                                        </div>
-                                        <div class="data-value">
-                                            <?= format_currency($inv['modal_investasi']) ?>
-                                        </div>
-                                        <div class="data-actions">
-                                            <a href="admin/edit_investasi.php?id=<?= $inv['id'] ?>" class="btn-icon" title="Edit">
-                                                <i class="fas fa-edit"></i>
-                                            </a>
-                                            <?php if ($inv['status'] == 'aktif'): ?>
-                                            <a href="admin/transaksi_jual.php?id=<?= $inv['id'] ?>" class="btn-icon warning" title="Jual">
-                                                <i class="fas fa-handshake"></i>
-                                            </a>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php else: ?>
-                            <div class="empty-state">
-                                <i class="fas fa-folder-open"></i>
-                                <p>Belum ada data investasi</p>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </section>
-
-                <!-- Recent Cash Transactions -->
-                <section class="card recent-cash">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <i class="fas fa-wallet"></i>
-                            Transaksi Kas Terbaru
-                        </h2>
-                    </div>
-                    <div class="card-body">
-                        <?php if (count($cash_transactions) > 0): ?>
-                            <div class="data-table">
-                                <?php foreach ($cash_transactions as $cash): ?>
-                                    <div class="data-row">
-                                        <div class="data-main">
-                                            <h4><?= htmlspecialchars($cash['judul']) ?></h4>
-                                            <p>
-                                                <?= ucfirst(str_replace('_', ' ', $cash['kategori'])) ?> • 
-                                                <?= date('d M Y', strtotime($cash['tanggal'])) ?>
-                                            </p>
-                                        </div>
-                                        <div class="data-value <?= $cash['tipe'] == 'masuk' ? 'positive' : 'negative' ?>">
-                                            <?= $cash['tipe'] == 'masuk' ? '+' : '-' ?><?= format_currency($cash['jumlah']) ?>
-                                        </div>
-                                        <div class="data-actions">
-                                            <?php if (!empty($cash['bukti_file'])): ?>
-                                                <a href="admin/view_cash.php?id=<?= $cash['id'] ?>"class="btn-icon" title="Detail">
-                                                    <i class="fas fa-eye"></i>
-                                                </a>
-                                            <?php endif; ?>
-                                            <a href="admin/edit_cash.php?id=<?= $cash['id'] ?>" class="btn-icon" title="Edit">
-                                                <i class="fas fa-edit"></i>
-                                            </a>
-                                            <a href="admin/delete_cash.php?id=<?= $cash['id'] ?>" class="btn-icon danger" title="Hapus" onclick="return confirm('Yakin hapus transaksi ini?')">
-                                                <i class="fas fa-trash"></i>
-                                            </a>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php else: ?>
-                            <div class="empty-state">
-                                <i class="fas fa-folder-open"></i>
-                                <p>Belum ada transaksi kas</p>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </section>
-
-                <!-- Recent Sales -->
-                <section class="card recent-sales">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <i class="fas fa-handshake"></i>
-                            Penjualan Terbaru
-                        </h2>
-                    </div>
-                    <div class="card-body">
-                        <?php if (count($sales_list) > 0): ?>
-                            <div class="data-table">
-                                <?php foreach ($sales_list as $sale): ?>
-                                    <div class="data-row">
-                                        <div class="data-main">
-                                            <h4><?= htmlspecialchars($sale['judul_investasi']) ?></h4>
-                                            <p>
-                                                <?= htmlspecialchars($sale['nama_kategori']) ?> • 
-                                                <?= date('d M Y', strtotime($sale['tanggal_jual'])) ?> •
-                                                ROI: <?= number_format($sale['roi_persen'], 2) ?>%
-                                            </p>
-                                        </div>
-                                        <div class="data-value <?= $sale['profit_loss'] >= 0 ? 'positive' : 'negative' ?>">
-                                            <?= $sale['profit_loss'] >= 0 ? '+' : '' ?><?= format_currency($sale['profit_loss']) ?>
-                                        </div>
-                                        <div class="data-actions">
-                                            <a href="admin/view_sale.php?id=<?= $sale['id'] ?>" class="btn-icon" title="Detail">
-                                                <i class="fas fa-eye"></i>
-                                            </a>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php else: ?>
-                            <div class="empty-state">
-                                <i class="fas fa-folder-open"></i>
-                                <p>Belum ada data penjualan</p>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </section>
-
-                <!-- Recent Profits -->
-                <section class="card recent-profits">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <i class="fas fa-arrow-trend-up"></i>
-                            Keuntungan Terbaru
-                        </h2>
-                    </div>
-                    <div class="card-body">
-                        <?php if (count($keuntungan_list) > 0): ?>
-                            <div class="data-table">
-                                <?php foreach ($keuntungan_list as $profit): ?>
-                                    <div class="data-row">
-                                        <div class="data-main">
-                                            <h4><?= htmlspecialchars($profit['judul_keuntungan']) ?></h4>
-                                            <p><?= htmlspecialchars($profit['judul_investasi']) ?> • <?= date('d M Y', strtotime($profit['tanggal_keuntungan'])) ?></p>
-                                        </div>
-                                        <div class="data-value positive">
-                                            +<?= format_currency($profit['jumlah_keuntungan']) ?>
-                                        </div>
-                                        <div class="data-actions">
-                                            <a href="admin/edit_keuntungan.php?id=<?= $profit['id'] ?>" class="btn-icon" title="Edit">
-                                                <i class="fas fa-edit"></i>
-                                            </a>
-                                            <a href="admin/delete_keuntungan.php?id=<?= $profit['id'] ?>" class="btn-icon danger" title="Hapus" onclick="return confirm('Yakin hapus keuntungan ini?')">
-                                                <i class="fas fa-trash"></i>
-                                            </a>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php else: ?>
-                            <div class="empty-state">
-                                <i class="fas fa-folder-open"></i>
-                                <p>Belum ada data keuntungan</p>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </section>
-
-                <!-- Recent Losses -->
-                <section class="card recent-losses">
-                    <div class="card-header">
-                        <h2 class="card-title">
-                            <i class="fas fa-arrow-trend-down"></i>
-                            Kerugian Terbaru
-                        </h2>
-                    </div>
-                    <div class="card-body">
-                        <?php if (count($kerugian_list) > 0): ?>
-                            <div class="data-table">
-                                <?php foreach ($kerugian_list as $loss): ?>
-                                    <div class="data-row">
-                                        <div class="data-main">
-                                            <h4><?= htmlspecialchars($loss['judul_kerugian']) ?></h4>
-                                            <p><?= htmlspecialchars($loss['judul_investasi']) ?> • <?= date('d M Y', strtotime($loss['tanggal_kerugian'])) ?></p>
-                                        </div>
-                                        <div class="data-value negative">
-                                            -<?= format_currency($loss['jumlah_kerugian']) ?>
-                                        </div>
-                                        <div class="data-actions">
-                                            <a href="admin/edit_kerugian.php?id=<?= $loss['id'] ?>" class="btn-icon" title="Edit">
-                                                <i class="fas fa-edit"></i>
-                                            </a>
-                                            <a href="admin/delete_kerugian.php?id=<?= $loss['id'] ?>" class="btn-icon danger" title="Hapus" onclick="return confirm('Yakin hapus kerugian ini?')">
-                                                <i class="fas fa-trash"></i>
-                                            </a>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php else: ?>
-                            <div class="empty-state">
-                                <i class="fas fa-folder-open"></i>
-                                <p>Belum ada data kerugian</p>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </section>
-
-            </div>
 
         </div>
     </main>
 
     <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         // Loading Screen
         window.addEventListener('load', () => {
             setTimeout(() => {
                 document.getElementById('loadingScreen').classList.add('hide');
-            }, 800);
+            }, 500);
         });
 
         // Sidebar Toggle
@@ -916,13 +1067,11 @@ $flash = $_SESSION['_flash'] ?? null;
             sidebar.classList.toggle('mobile-open');
         });
 
-        // Load sidebar state
         if (localStorage.getItem('sidebarCollapsed') === 'true') {
             sidebar.classList.add('collapsed');
             mainContent.classList.add('expanded');
         }
 
-        // Close sidebar on mobile when clicking outside
         document.addEventListener('click', (e) => {
             if (window.innerWidth <= 768) {
                 if (!sidebar.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
@@ -931,129 +1080,223 @@ $flash = $_SESSION['_flash'] ?? null;
             }
         });
 
-        // Flash Message
-        function closeFlash() {
-            const flash = document.getElementById('flashMessage');
-            if (flash) {
-                flash.style.animation = 'slideOut 0.3s ease';
-                setTimeout(() => flash.remove(), 300);
-            }
-        }
-
-        // Auto-hide flash message
-        setTimeout(closeFlash, 5000);
-
-        // Refresh button animation
-        document.querySelectorAll('.refresh-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                this.querySelector('i').style.animation = 'spin 1s linear';
+        // Flash Message Auto-close
+        document.addEventListener('DOMContentLoaded', function() {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
                 setTimeout(() => {
-                    this.querySelector('i').style.animation = '';
-                }, 1000);
+                    alert.style.animation = 'slideOut 0.3s ease';
+                    setTimeout(() => alert.remove(), 300);
+                }, 5000);
             });
         });
 
-        // Add animation to stat cards
-        const statCards = document.querySelectorAll('.stat-card');
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach((entry, index) => {
-                if (entry.isIntersecting) {
-                    setTimeout(() => {
-                        entry.target.style.animation = 'fadeInUp 0.5s ease forwards';
-                    }, index * 50);
+        // Monthly Performance Chart
+        <?php if (count($monthly_profit) > 0 || count($monthly_loss) > 0): ?>
+        const monthlyData = {
+            profit: <?= json_encode($monthly_profit) ?>,
+            loss: <?= json_encode($monthly_loss) ?>
+        };
+
+        // Prepare chart data
+        const allMonths = new Set();
+        monthlyData.profit.forEach(item => allMonths.add(item.bulan));
+        monthlyData.loss.forEach(item => allMonths.add(item.bulan));
+        const sortedMonths = Array.from(allMonths).sort();
+
+        const profitData = sortedMonths.map(month => {
+            const found = monthlyData.profit.find(p => p.bulan === month);
+            return found ? parseFloat(found.total_keuntungan) : 0;
+        });
+
+        const lossData = sortedMonths.map(month => {
+            const found = monthlyData.loss.find(l => l.bulan === month);
+            return found ? parseFloat(found.total_kerugian) : 0;
+        });
+
+        // Format month labels
+        const labels = sortedMonths.map(month => {
+            const [year, monthNum] = month.split('-');
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+            return monthNames[parseInt(monthNum) - 1] + ' ' + year;
+        });
+
+        // Create chart
+        const ctx = document.getElementById('monthlyChart');
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Keuntungan',
+                            data: profitData,
+                            backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                            borderColor: 'rgba(16, 185, 129, 1)',
+                            borderWidth: 2
+                        },
+                        {
+                            label: 'Kerugian',
+                            data: lossData,
+                            backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                            borderColor: 'rgba(239, 68, 68, 1)',
+                            borderWidth: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: '#cbd5e1',
+                                font: {
+                                    size: 12,
+                                    family: 'Inter'
+                                }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: '#1e293b',
+                            titleColor: '#f8fafc',
+                            bodyColor: '#cbd5e1',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            padding: 12,
+                            displayColors: true,
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += new Intl.NumberFormat('id-ID', {
+                                            style: 'currency',
+                                            currency: 'IDR',
+                                            minimumFractionDigits: 0
+                                        }).format(context.parsed.y);
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                color: '#334155',
+                                drawBorder: false
+                            },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: {
+                                    size: 11
+                                }
+                            }
+                        },
+                        y: {
+                            grid: {
+                                color: '#334155',
+                                drawBorder: false
+                            },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: {
+                                    size: 11
+                                },
+                                callback: function(value) {
+                                    return new Intl.NumberFormat('id-ID', {
+                                        notation: 'compact',
+                                        compactDisplay: 'short'
+                                    }).format(value);
+                                }
+                            }
+                        }
+                    }
                 }
             });
-        }, { threshold: 0.1 });
+        }
+        <?php endif; ?>
 
-        statCards.forEach(card => observer.observe(card));
-
-        // Counter animation for stat values
-        function animateValue(element, start, end, duration) {
-            const range = end - start;
-            const increment = range / (duration / 16);
-            let current = start;
+        // Export to Excel (Simple CSV)
+        function exportToExcel() {
+            const filename = 'Laporan_SAZEN_<?= date('Y-m-d') ?>.csv';
             
-            const timer = setInterval(() => {
-                current += increment;
-                if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
-                    current = end;
-                    clearInterval(timer);
-                }
-                
-                const formatted = new Intl.NumberFormat('id-ID', {
-                    style: 'currency',
-                    currency: 'IDR',
-                    minimumFractionDigits: 2
-                }).format(current);
-                
-                element.textContent = formatted;
-            }, 16);
+            let csv = 'Laporan Investasi SAZEN\n';
+            csv += 'Periode: <?= date('d/m/Y', strtotime($start_date)) ?> - <?= date('d/m/Y', strtotime($end_date)) ?>\n\n';
+            
+            csv += 'RINGKASAN\n';
+            csv += 'Saldo Kas,<?= $saldo_kas ?>\n';
+            csv += 'Total Investasi,<?= $total_nilai_investasi ?>\n';
+            csv += 'Total Aset,<?= $total_aset ?>\n';
+            csv += 'Total Keuntungan,<?= $total_keuntungan ?>\n';
+            csv += 'Total Kerugian,<?= $total_kerugian ?>\n';
+            csv += 'Net Profit,<?= $net_profit ?>\n';
+            csv += 'ROI Global,<?= number_format($roi_global, 2) ?>%\n\n';
+            
+            <?php if (count($kategori_breakdown) > 0): ?>
+            csv += 'PERFORMANCE PER KATEGORI\n';
+            csv += 'Kategori,Jumlah,Modal,Keuntungan,Kerugian,Nilai Total,ROI\n';
+            <?php foreach ($kategori_breakdown as $kat): 
+                $roi = $kat['total_modal'] > 0 ? (($kat['total_keuntungan'] - $kat['total_kerugian']) / $kat['total_modal'] * 100) : 0;
+            ?>
+            csv += '<?= addslashes($kat['nama_kategori']) ?>,<?= $kat['jumlah_investasi'] ?>,<?= $kat['total_modal'] ?>,<?= $kat['total_keuntungan'] ?>,<?= $kat['total_kerugian'] ?>,<?= $kat['nilai_total'] ?>,<?= number_format($roi, 2) ?>%\n';
+            <?php endforeach; ?>
+            csv += '\n';
+            <?php endif; ?>
+            
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
         }
 
-        // Trigger counter animation when stat cards are visible
-        const statValues = document.querySelectorAll('.stat-value');
-        const valueObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting && !entry.target.classList.contains('animated')) {
-                    entry.target.classList.add('animated');
-                    const text = entry.target.textContent.replace(/[^\d,]/g, '').replace(',', '.');
-                    const value = parseFloat(text) || 0;
-                    entry.target.textContent = 'Rp 0,00';
-                    setTimeout(() => {
-                        animateValue(entry.target, 0, value, 2000);
-                    }, 300);
-                }
-            });
-        }, { threshold: 0.5 });
-
-        statValues.forEach(value => valueObserver.observe(value));
-
-        // Smooth scroll for internal links
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function(e) {
-                e.preventDefault();
-                const target = document.querySelector(this.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
+        // Print styles
+        window.addEventListener('beforeprint', () => {
+            document.querySelectorAll('.sidebar, .content-header, .filter-section, .export-buttons, .data-actions').forEach(el => {
+                el.style.display = 'none';
             });
         });
 
-        // Add ripple effect to buttons
-        document.querySelectorAll('.action-card, .btn-icon').forEach(button => {
-            button.addEventListener('click', function(e) {
-                const ripple = document.createElement('span');
-                ripple.classList.add('ripple');
-                this.appendChild(ripple);
-
-                const rect = this.getBoundingClientRect();
-                const size = Math.max(rect.width, rect.height);
-                const x = e.clientX - rect.left - size / 2;
-                const y = e.clientY - rect.top - size / 2;
-
-                ripple.style.width = ripple.style.height = size + 'px';
-                ripple.style.left = x + 'px';
-                ripple.style.top = y + 'px';
-
-                setTimeout(() => ripple.remove(), 600);
+        window.addEventListener('afterprint', () => {
+            document.querySelectorAll('.sidebar, .content-header, .filter-section, .export-buttons, .data-actions').forEach(el => {
+                el.style.display = '';
             });
         });
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-                e.preventDefault();
-                alert('Search functionality coming soon!');
-            }
+        console.log('%c SAZEN Laporan & Analisis v3.0 ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
+        
+        // Debug: Log data untuk troubleshooting
+        console.log('Total Aset:', '<?= format_currency($total_aset) ?>');
+        console.log('Saldo Kas:', '<?= format_currency($saldo_kas) ?>');
+        console.log('Nilai Investasi:', '<?= format_currency($total_nilai_investasi) ?>');
+        console.log('ROI Global:', '<?= number_format($roi_global, 2) ?>%');
+        
+        // Check if stat values are visible
+        document.addEventListener('DOMContentLoaded', function() {
+            const statValues = document.querySelectorAll('.stat-value');
+            console.log('Found', statValues.length, 'stat value elements');
             
-            if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-                e.preventDefault();
-                toggleSidebar();
-            }
+            statValues.forEach((el, index) => {
+                console.log(`Stat ${index + 1}:`, {
+                    text: el.textContent,
+                    display: window.getComputedStyle(el).display,
+                    visibility: window.getComputedStyle(el).visibility,
+                    opacity: window.getComputedStyle(el).opacity
+                });
+            });
         });
-
-        console.log('%c SAZEN Investment Manager v3.0 ULTIMATE ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
-        console.log('%c Dashboard ULTIMATE loaded successfully! ', 'color: #10b981; font-size: 12px; font-weight: bold;');
     </script>
 </body>
 </html>

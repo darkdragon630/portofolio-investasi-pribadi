@@ -234,10 +234,9 @@ $recent_transactions = get_recent_cash_transactions($koneksi, 10);
                     </div>
                     <div class="transaction-actions">
                         <?php if (!empty($tx['bukti_file'])): ?>
-                            <a href="../view_cash.php?id=<?= $cash['id'] ?>" 
+                            <a href="../view_cash.php?id=<?= $tx['id'] ?>" 
                                class="btn-icon" 
-                               title="Lihat Bukti" 
-                               target="_blank">
+                               title="Lihat Bukti" >
                                 <i class="fas fa-eye"></i>
                             </a>
                         <?php endif; ?>

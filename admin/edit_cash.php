@@ -46,9 +46,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Validation
     $errors = [];
+    $allowed_tipe = ['masuk', 'keluar'];
+    $allowed_kategori = ['modal_awal', 'top_up', 'hasil_jual', 'tarik_dana', 'investasi_baru', 'dividen', 'lainnya'];
+    
     if (empty($judul)) $errors[] = "Judul tidak boleh kosong";
     if ($jumlah <= 0) $errors[] = "Jumlah harus lebih dari 0";
     if (empty($tanggal)) $errors[] = "Tanggal tidak boleh kosong";
+    if (!in_array($tipe, $allowed_tipe)) $errors[] = "Tipe transaksi tidak valid";
+    if (!in_array($kategori, $allowed_kategori)) $errors[] = "Kategori tidak valid";
     
     // Handle file upload (store to database, not filesystem)
     $bukti_file = $cash['bukti_file']; // Keep old file by default
@@ -594,9 +599,12 @@ $page_title = "Edit Transaksi Kas";
                             <i class="fas fa-tag"></i> Kategori Kas *
                         </label>
                         <select id="kategori" name="kategori" required>
-                            <option value="operasional" <?= $cash['kategori'] == 'operasional' ? 'selected' : '' ?>>Operasional</option>
-                            <option value="investasi" <?= $cash['kategori'] == 'investasi' ? 'selected' : '' ?>>Investasi</option>
-                            <option value="pendapatan" <?= $cash['kategori'] == 'pendapatan' ? 'selected' : '' ?>>Pendapatan</option>
+                            <option value="modal_awal" <?= $cash['kategori'] == 'modal_awal' ? 'selected' : '' ?>>Modal Awal</option>
+                            <option value="top_up" <?= $cash['kategori'] == 'top_up' ? 'selected' : '' ?>>Top Up</option>
+                            <option value="hasil_jual" <?= $cash['kategori'] == 'hasil_jual' ? 'selected' : '' ?>>Hasil Jual</option>
+                            <option value="tarik_dana" <?= $cash['kategori'] == 'tarik_dana' ? 'selected' : '' ?>>Tarik Dana</option>
+                            <option value="investasi_baru" <?= $cash['kategori'] == 'investasi_baru' ? 'selected' : '' ?>>Investasi Baru</option>
+                            <option value="dividen" <?= $cash['kategori'] == 'dividen' ? 'selected' : '' ?>>Dividen</option>
                             <option value="lainnya" <?= $cash['kategori'] == 'lainnya' ? 'selected' : '' ?>>Lainnya</option>
                         </select>
                     </div>

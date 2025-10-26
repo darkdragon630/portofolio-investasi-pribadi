@@ -698,6 +698,47 @@ $cash_by_category = get_cash_by_category($koneksi);
                 flex-direction: column;
             }
         }
+
+/* ---------- PRINT FIX ---------- */
+@media print {
+    /* pastikan elemen penting tetap tampil */
+    .sidebar,
+    .content-header,
+    .filter-section,
+    .export-buttons,
+    .data-actions {
+        display: none !important;
+    }
+
+    /* override gradient pada .stat-value.highlight */
+    .stat-value.highlight,
+    .stat-value.positive,
+    .stat-value.negative,
+    .stat-value {
+        background: none !important;
+        -webkit-background-clip: unset !important;
+        background-clip: unset !important;
+        -webkit-text-fill-color: unset !important;
+        color: #1f2937 !important;          /* hitam-kekuningan, bisa diganti #000 */
+        font-weight: 800 !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+
+    /* opsional: buat tabel & card tetap berwarna soft */
+    .card,
+    .stat-card {
+        background: #fff !important;
+        border: 1px solid #ccc !important;
+        box-shadow: none !important;
+        color: #000 !important;
+    }
+
+    /* Chart tetap tercetak (jika diinginkan) */
+    canvas {
+        max-width: 100% !important;
+    }
+}
     </style>
 </head>
 <body>

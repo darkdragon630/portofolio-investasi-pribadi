@@ -130,6 +130,8 @@ body {
   width: 80px; /* ubah sesuai kebutuhan */
   height: auto;
   animation: glow 2s infinite alternate;
+  justify-content: center;
+  align-items: center;
 }
 
 /* Efek bercahaya lembut */

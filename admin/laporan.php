@@ -26,7 +26,10 @@ if (isset($_POST['logout'])) {
 }
 
 // Get flash message
-$flash = get_flash_message();
+<?= flash('success') ?>
+<?= flash('error') ?>
+<?= flash('warning') ?>
+<?= flash('info') ?>
 
 // Date Range Filter
 $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-01-01');

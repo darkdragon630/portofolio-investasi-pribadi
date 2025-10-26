@@ -14,8 +14,6 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-echo $_SESSION['flash'] ?? '';  
-
 // Get user info
 $username = $_SESSION['username'];
 $email = $_SESSION['email'];
@@ -26,7 +24,6 @@ if (isset($_POST['logout'])) {
     header("Location: auth.php");
     exit;
 }
-
 
 // Date Range Filter
 $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-01-01');
@@ -199,6 +196,243 @@ $cash_by_category = get_cash_by_category($koneksi);
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <style>
+        /* ============================================
+           STATS GRID - 8 CARDS COMPLETE LAYOUT
+        ============================================ */
+        .stats-grid-complete {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        @media (min-width: 1400px) {
+            .stats-grid-complete {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        @media (min-width: 1024px) and (max-width: 1399px) {
+            .stats-grid-complete {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (min-width: 768px) and (max-width: 1023px) {
+            .stats-grid-complete {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 767px) {
+            .stats-grid-complete {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+        }
+
+        /* Stat Card Enhanced */
+        .stat-card {
+            background: var(--surface-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-xl);
+            padding: 1.5rem;
+            transition: all var(--transition-normal);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+            opacity: 0;
+            transition: opacity var(--transition-fast);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary-color);
+        }
+
+        .stat-card:hover::before {
+            opacity: 1;
+        }
+
+        /* Stat Header */
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
+            color: var(--primary-color);
+            transition: all var(--transition-normal);
+        }
+
+        .stat-card:hover .stat-icon {
+            transform: scale(1.1) rotate(5deg);
+        }
+
+        .stat-trend {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.375rem 0.75rem;
+            border-radius: var(--radius-full);
+            font-size: 0.75rem;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .stat-trend.positive {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success-color);
+        }
+
+        .stat-trend.negative {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger-color);
+        }
+
+        .stat-badge {
+            padding: 0.375rem 0.75rem;
+            border-radius: var(--radius-full);
+            font-size: 0.75rem;
+            font-weight: 700;
+            background: var(--primary-gradient);
+            color: white;
+        }
+
+        .stat-pulse {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--success-color);
+            animation: pulse 2s ease-in-out infinite;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+        }
+
+        .stat-pulse.danger {
+            background: var(--danger-color);
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+            50% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+            }
+        }
+
+        /* Stat Body */
+        .stat-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            line-height: 1.2;
+            font-feature-settings: 'tnum';
+        }
+
+        .stat-value.highlight {
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-value.positive {
+            color: var(--success-color);
+        }
+
+        .stat-value.negative {
+            color: var(--danger-color);
+        }
+
+        .stat-footer {
+            font-size: 0.813rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* Card Color Variants */
+        .stat-card.stat-primary .stat-icon {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(99, 102, 241, 0.05));
+            color: #6366f1;
+        }
+
+        .stat-card.stat-success .stat-icon {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.05));
+            color: var(--success-color);
+        }
+
+        .stat-card.stat-danger .stat-icon {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05));
+            color: var(--danger-color);
+        }
+
+        .stat-card.stat-warning .stat-icon {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(251, 191, 36, 0.05));
+            color: #fbbf24;
+        }
+
+        .stat-card.stat-info .stat-icon {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.05));
+            color: #3b82f6;
+        }
+
+        .stat-card.stat-purple .stat-icon {
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.05));
+            color: #a855f7;
+        }
+
+        .stat-card.stat-orange .stat-icon {
+            background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(249, 115, 22, 0.05));
+            color: #f97316;
+        }
+
+        .stat-card.stat-gradient {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(168, 85, 247, 0.05));
+        }
+
+        .stat-card.stat-gradient .stat-icon {
+            background: var(--primary-gradient);
+            color: white;
+        }
+
         /* Additional Styles for Laporan */
         .filter-section {
             background: var(--surface-primary);
@@ -462,21 +696,6 @@ $cash_by_category = get_cash_by_category($koneksi);
         </header>
 
         <!-- Flash Messages -->
-        <?php if ($flash): ?>
-            <div class="flash-message flash-<?= $flash['type'] ?>" id="flashMessage">
-                <div class="flash-icon">
-                    <i class="fas fa-<?= $flash['type'] == 'success' ? 'check-circle' : 'exclamation-circle' ?>"></i>
-                </div>
-                <div class="flash-content">
-                    <div class="flash-text"><?= htmlspecialchars($flash['message']) ?></div>
-                </div>
-                <button class="flash-close" onclick="closeFlash()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-        <?php endif; ?>
-
-        // Get flash message
         <?= flash('success') ?>
         <?= flash('error') ?>
         <?= flash('warning') ?>
@@ -514,10 +733,10 @@ $cash_by_category = get_cash_by_category($koneksi);
                 </button>
             </div>
 
-            <!-- Summary Statistics -->
+            <!-- Summary Statistics - 8 Cards Complete -->
             <section class="stats-overview">
-                <div class="stats-grid-enhanced">
-                    <!-- Saldo Kas -->
+                <div class="stats-grid-complete">
+                    <!-- Card 1: Saldo Kas -->
                     <div class="stat-card stat-warning">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-wallet"></i></div>
@@ -532,12 +751,12 @@ $cash_by_category = get_cash_by_category($koneksi);
                         </div>
                     </div>
 
-                    <!-- Modal Investasi -->
+                    <!-- Card 2: Modal Investasi -->
                     <div class="stat-card stat-info">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-hand-holding-dollar"></i></div>
                             <div class="stat-trend positive">
-                                <i class="fas fa-arrow-up"></i>
+                                <i class="fas fa-coins"></i>
                                 <span><?= count($investasi_aktif) ?></span>
                             </div>
                         </div>
@@ -548,10 +767,11 @@ $cash_by_category = get_cash_by_category($koneksi);
                         </div>
                     </div>
 
-                    <!-- Nilai Investasi -->
+                    <!-- Card 3: Nilai Investasi -->
                     <div class="stat-card stat-primary">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-chart-line"></i></div>
+                            <div class="stat-badge"><?= count($investasi_aktif) ?></div>
                         </div>
                         <div class="stat-body">
                             <div class="stat-label">Nilai Investasi</div>
@@ -560,7 +780,7 @@ $cash_by_category = get_cash_by_category($koneksi);
                         </div>
                     </div>
 
-                    <!-- Total Aset -->
+                    <!-- Card 4: Total Aset -->
                     <div class="stat-card stat-purple">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-coins"></i></div>
@@ -578,10 +798,11 @@ $cash_by_category = get_cash_by_category($koneksi);
                         </div>
                     </div>
 
-                    <!-- Total Keuntungan -->
+                    <!-- Card 5: Total Keuntungan -->
                     <div class="stat-card stat-success">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-arrow-trend-up"></i></div>
+                            <div class="stat-pulse"></div>
                         </div>
                         <div class="stat-body">
                             <div class="stat-label">Total Keuntungan</div>
@@ -590,10 +811,11 @@ $cash_by_category = get_cash_by_category($koneksi);
                         </div>
                     </div>
 
-                    <!-- Total Kerugian -->
+                    <!-- Card 6: Total Kerugian -->
                     <div class="stat-card stat-danger">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-arrow-trend-down"></i></div>
+                            <div class="stat-pulse danger"></div>
                         </div>
                         <div class="stat-body">
                             <div class="stat-label">Total Kerugian</div>
@@ -602,7 +824,7 @@ $cash_by_category = get_cash_by_category($koneksi);
                         </div>
                     </div>
 
-                    <!-- Net Profit -->
+                    <!-- Card 7: Net Profit -->
                     <div class="stat-card stat-gradient">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-trophy"></i></div>
@@ -618,8 +840,8 @@ $cash_by_category = get_cash_by_category($koneksi);
                         </div>
                     </div>
 
-                    <!-- Total Penjualan -->
-                    <div class="stat-card stat-warning">
+                    <!-- Card 8: Total Penjualan -->
+                    <div class="stat-card stat-orange">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-handshake"></i></div>
                             <div class="stat-trend <?= $sales_profit_loss >= 0 ? 'positive' : 'negative' ?>">
@@ -822,15 +1044,16 @@ $cash_by_category = get_cash_by_category($koneksi);
             }
         });
 
-        // Flash Message
-        function closeFlash() {
-            const flash = document.getElementById('flashMessage');
-            if (flash) {
-                flash.style.animation = 'slideOut 0.3s ease';
-                setTimeout(() => flash.remove(), 300);
-            }
-        }
-        setTimeout(closeFlash, 5000);
+        // Flash Message Auto-close
+        document.addEventListener('DOMContentLoaded', function() {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                setTimeout(() => {
+                    alert.style.animation = 'slideOut 0.3s ease';
+                    setTimeout(() => alert.remove(), 300);
+                }, 5000);
+            });
+        });
 
         // Monthly Performance Chart
         <?php if (count($monthly_profit) > 0 || count($monthly_loss) > 0): ?>

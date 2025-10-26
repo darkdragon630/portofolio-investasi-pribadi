@@ -84,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Get current balance
 $balance = get_cash_balance($koneksi);
-$recent_transactions = get_recent_cash_transactions($koneksi, 10);
+$recent_transactions = get_recent_cash_transactions($koneksi);
 ?>
 <!DOCTYPE html>
 <html lang="id">

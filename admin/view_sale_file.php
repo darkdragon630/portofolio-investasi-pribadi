@@ -4,7 +4,7 @@
  * View Sale Transaction File from Database
  * File: view_sale_file.php
  */
-require_once 'config/koneksi.php';
+require_once '../config/koneksi.php';
 
 // Validate parameters
 if (!isset($_GET['id'])) {

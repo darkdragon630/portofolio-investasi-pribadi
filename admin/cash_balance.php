@@ -220,23 +220,21 @@ $recent_transactions = get_recent_cash_transactions($koneksi, 10);
     <div class="recent-section">
         <h3><i class="fas fa-history"></i> Transaksi Terakhir</h3>
         <div class="transactions-list">
-            <?php foreach ($recent_transactions as $tx): ?>
+            <?php foreach ($recent_transactions as $cash): ?>
                 <div class="transaction-item">
-                    <div class="transaction-icon <?= $tx['tipe'] ?>">
-                        <i class="fas fa-arrow-<?= $tx['tipe'] == 'masuk' ? 'down' : 'up' ?>"></i>
+                    <div class="transaction-icon <?= $cash['tipe'] ?>">
+                        <i class="fas fa-arrow-<?= $cash['tipe'] == 'masuk' ? 'down' : 'up' ?>"></i>
                     </div>
                     <div class="transaction-info">
-                        <h4><?= htmlspecialchars($tx['judul']) ?></h4>
-                        <p><?= ucfirst(str_replace('_', ' ', $tx['kategori'])) ?> • <?= date('d M Y', strtotime($tx['tanggal'])) ?></p>
+                        <h4><?= htmlspecialchars($cash['judul']) ?></h4>
+                        <p><?= ucfirst(str_replace('_', ' ', $cash['kategori'])) ?> • <?= date('d M Y', strtotime($cash['tanggal'])) ?></p>
                     </div>
-                    <div class="transaction-amount <?= $tx['tipe'] == 'masuk' ? 'positive' : 'negative' ?>">
-                        <?= $tx['tipe'] == 'masuk' ? '+' : '-' ?><?= format_currency($tx['jumlah']) ?>
+                    <div class="transaction-amount <?= $cash['tipe'] == 'masuk' ? 'positive' : 'negative' ?>">
+                        <?= $cash['tipe'] == 'masuk' ? '+' : '-' ?><?= format_currency($cash['jumlah']) ?>
                     </div>
                     <div class="transaction-actions">
-                        <?php if (!empty($tx['bukti_file'])): ?>
-                            <a href="../view_cash.php?id=<?= $tx['id'] ?>" 
-                               class="btn-icon" 
-                               title="Lihat Bukti" >
+                        <?php if (!empty($cash['bukti_file'])): ?>
+                            <a href="../view_cash.php?id=<?= $cash['id'] ?>"class="btn-icon" title="Detail">
                                 <i class="fas fa-eye"></i>
                             </a>
                         <?php endif; ?>

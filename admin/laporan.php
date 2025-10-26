@@ -201,33 +201,44 @@ $cash_by_category = get_cash_by_category($koneksi);
         ============================================ */
         .stats-grid-complete {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 1.5rem;
             margin-bottom: 2rem;
         }
 
+        /* Desktop Large (>= 1400px) - 4 kolom */
         @media (min-width: 1400px) {
             .stats-grid-complete {
                 grid-template-columns: repeat(4, 1fr);
             }
         }
 
+        /* Desktop Medium (1024px - 1399px) - 3 kolom */
         @media (min-width: 1024px) and (max-width: 1399px) {
             .stats-grid-complete {
                 grid-template-columns: repeat(3, 1fr);
             }
         }
 
+        /* Tablet (768px - 1023px) - 2 kolom */
         @media (min-width: 768px) and (max-width: 1023px) {
             .stats-grid-complete {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
 
+        /* Mobile (<768px) - 1 kolom */
         @media (max-width: 767px) {
             .stats-grid-complete {
                 grid-template-columns: 1fr;
                 gap: 1rem;
+            }
+        }
+
+        /* Fallback untuk layar sangat besar */
+        @media (min-width: 1920px) {
+            .stats-grid-complete {
+                grid-template-columns: repeat(4, 1fr);
+                max-width: 1800px;
             }
         }
 
@@ -240,6 +251,9 @@ $cash_by_category = get_cash_by_category($koneksi);
             transition: all var(--transition-normal);
             position: relative;
             overflow: hidden;
+            min-height: 160px;
+            display: flex;
+            flex-direction: column;
         }
 
         .stat-card::before {
@@ -359,12 +373,16 @@ $cash_by_category = get_cash_by_category($koneksi);
             letter-spacing: 0.5px;
         }
 
+        /* Stat Value Debug - Make sure visible */
         .stat-value {
             font-size: 1.75rem;
             font-weight: 800;
             color: var(--text-primary);
             line-height: 1.2;
             font-feature-settings: 'tnum';
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
         }
 
         .stat-value.highlight {
@@ -372,6 +390,16 @@ $cash_by_category = get_cash_by_category($koneksi);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
+            /* Fallback for browsers that don't support background-clip */
+        }
+
+        /* Fallback jika gradient tidak support */
+        @supports not (background-clip: text) {
+            .stat-value.highlight {
+                color: var(--primary-color);
+                background: none;
+                -webkit-text-fill-color: unset;
+            }
         }
 
         .stat-value.positive {
@@ -788,6 +816,10 @@ $cash_by_category = get_cash_by_category($koneksi);
                             <div class="stat-trend <?= $roi_global >= 0 ? 'positive' : 'negative' ?>">
                                 <i class="fas fa-arrow-<?= $roi_global >= 0 ? 'up' : 'down' ?>"></i>
                                 <span><?= number_format(abs($roi_global), 1) ?>%</span>
+                            </div>
+                            <?php else: ?>
+                            <div class="stat-trend positive">
+                                <i class="fas fa-circle-check"></i>
                             </div>
                             <?php endif; ?>
                         </div>

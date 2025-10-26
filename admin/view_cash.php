@@ -19,19 +19,9 @@ if (!isset($_GET['id'])) {
 }
 
 $id = (int)$_GET['id'];
-// Get cash balance detail
-$cash = get_cash_transaction_by_id($koneksi, $id);
 
-// DEBUG: Tampilkan struktur data
-echo "<pre>";
-echo "Data yang ditemukan:\n";
-print_r($cash);
-echo "\n\nKolom yang tersedia:\n";
-if ($cash) {
-    print_r(array_keys($cash));
-}
-echo "</pre>";
-die(); // Stop dulu untuk debug
+// Get cash balance detail
+$cash = get_cash_transaction_detail($koneksi, $id);
 
 if (!$cash) {
     redirect_with_message("../dashboard.php", 'error', 'Data cash balance tidak ditemukan');
@@ -63,14 +53,14 @@ if (!$cash) {
 
     <!-- Cash Summary -->
     <div class="cash-summary">
-        <div class="summary-card <?= $cash['jenis_transaksi'] == 'deposit' ? 'deposit' : 'withdraw' ?>">
+        <div class="summary-card <?= $cash['jenis_transaksi'] == 'masuk' ? 'deposit' : 'withdraw' ?>">
             <div class="summary-icon">
-                <i class="fas fa-<?= $cash['jenis_transaksi'] == 'deposit' ? 'arrow-down' : 'arrow-up' ?>"></i>
+                <i class="fas fa-<?= $cash['jenis_transaksi'] == 'masuk' ? 'arrow-down' : 'arrow-up' ?>"></i>
             </div>
             <div class="summary-info">
-                <div class="summary-label"><?= $cash['jenis_transaksi'] == 'deposit' ? 'Deposit' : 'Penarikan' ?></div>
-                <div class="summary-value <?= $cash['jenis_transaksi'] == 'deposit' ? 'positive' : 'negative' ?>">
-                    <?= $cash['jenis_transaksi'] == 'deposit' ? '+' : '-' ?><?= format_currency($cash['jumlah']) ?>
+                <div class="summary-label"><?= $cash['jenis_transaksi'] == 'masuk' ? 'Deposit' : 'Penarikan' ?></div>
+                <div class="summary-value <?= $cash['jenis_transaksi'] == 'masuk' ? 'positive' : 'negative' ?>">
+                    <?= $cash['jenis_transaksi'] == 'masuk' ? '+' : '-' ?><?= format_currency($cash['jumlah']) ?>
                 </div>
                 <div class="summary-balance">Saldo: <?= format_currency($cash['saldo_setelah']) ?></div>
             </div>
@@ -92,8 +82,15 @@ if (!$cash) {
                 
                 <div class="detail-item">
                     <label>Jenis Transaksi:</label>
-                    <span class="badge badge-<?= $cash['jenis_transaksi'] == 'deposit' ? 'success' : 'warning' ?>">
+                    <span class="badge badge-<?= $cash['jenis_transaksi'] == 'masuk' ? 'success' : 'warning' ?>">
                         <?= strtoupper($cash['jenis_transaksi']) ?>
+                    </span>
+                </div>
+                
+                <div class="detail-item">
+                    <label>Kategori:</label>
+                    <span class="badge badge-info">
+                        <?= ucfirst(str_replace('_', ' ', $cash['kategori'])) ?>
                     </span>
                 </div>
             </div>
@@ -110,9 +107,9 @@ if (!$cash) {
                 </div>
                 
                 <div class="detail-item highlight">
-                    <label>Jumlah <?= $cash['jenis_transaksi'] == 'deposit' ? 'Deposit' : 'Penarikan' ?>:</label>
-                    <span class="large <?= $cash['jenis_transaksi'] == 'deposit' ? 'positive' : 'negative' ?>">
-                        <?= $cash['jenis_transaksi'] == 'deposit' ? '+' : '-' ?><?= format_currency($cash['jumlah']) ?>
+                    <label>Jumlah <?= $cash['jenis_transaksi'] == 'masuk' ? 'Deposit' : 'Penarikan' ?>:</label>
+                    <span class="large <?= $cash['jenis_transaksi'] == 'masuk' ? 'positive' : 'negative' ?>">
+                        <?= $cash['jenis_transaksi'] == 'masuk' ? '+' : '-' ?><?= format_currency($cash['jumlah']) ?>
                     </span>
                 </div>
                 
@@ -123,12 +120,12 @@ if (!$cash) {
             </div>
         </div>
 
-        <!-- Source Info -->
-        <?php if (!empty($cash['sumber'])): ?>
+        <!-- Title/Description -->
+        <?php if (!empty($cash['judul'])): ?>
         <div class="form-section">
-            <h3><i class="fas fa-building"></i> Sumber/Tujuan</h3>
+            <h3><i class="fas fa-heading"></i> Deskripsi</h3>
             <div class="info-box">
-                <?= htmlspecialchars($cash['sumber']) ?>
+                <?= htmlspecialchars($cash['judul']) ?>
             </div>
         </div>
         <?php endif; ?>
@@ -323,6 +320,11 @@ if (!$cash) {
 .badge-warning {
     background: #fef3c7;
     color: #92400e;
+}
+
+.badge-info {
+    background: #dbeafe;
+    color: #1e40af;
 }
 
 .positive {

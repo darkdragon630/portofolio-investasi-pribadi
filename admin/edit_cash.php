@@ -654,7 +654,7 @@ $page_title = "Edit Transaksi Kas";
                         <div class="current-file">
                             <i class="fas fa-file"></i>
                             <span>File saat ini tersimpan</span>
-                            <a href="../view_file.php?type=cash&id=<?= $cash_id ?>" target="_blank" class="btn-view-file">
+                            <a href="view_cash.php?id=<?= $cash['id'] ?>" class="btn-view-file">
                                 <i class="fas fa-eye"></i> Lihat
                             </a>
                         </div>

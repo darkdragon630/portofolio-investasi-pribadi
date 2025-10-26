@@ -373,7 +373,7 @@ $cash_by_category = get_cash_by_category($koneksi);
             letter-spacing: 0.5px;
         }
 
-        /* Stat Value Debug - Make sure visible */
+        /* Stat Value - Enhanced Visibility */
         .stat-value {
             font-size: 1.75rem;
             font-weight: 800;
@@ -383,22 +383,32 @@ $cash_by_category = get_cash_by_category($koneksi);
             display: block !important;
             visibility: visible !important;
             opacity: 1 !important;
+            margin: 0.5rem 0;
         }
 
         .stat-value.highlight {
-            background: var(--primary-gradient);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            /* Fallback for browsers that don't support background-clip */
+            font-weight: 900;
         }
 
-        /* Fallback jika gradient tidak support */
-        @supports not (background-clip: text) {
+        /* Fallback untuk browser yang tidak support background-clip */
+        @supports not (background-clip: text) or not (-webkit-background-clip: text) {
             .stat-value.highlight {
-                color: var(--primary-color);
+                color: #667eea;
                 background: none;
-                -webkit-text-fill-color: unset;
+                -webkit-text-fill-color: currentColor;
+            }
+        }
+
+        /* Firefox specific fix */
+        @-moz-document url-prefix() {
+            .stat-value.highlight {
+                color: #667eea;
+                background: none;
+                -webkit-text-fill-color: currentColor;
             }
         }
 
@@ -812,16 +822,10 @@ $cash_by_category = get_cash_by_category($koneksi);
                     <div class="stat-card stat-purple">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-coins"></i></div>
-                            <?php if ($roi_global != 0): ?>
                             <div class="stat-trend <?= $roi_global >= 0 ? 'positive' : 'negative' ?>">
                                 <i class="fas fa-arrow-<?= $roi_global >= 0 ? 'up' : 'down' ?>"></i>
                                 <span><?= number_format(abs($roi_global), 1) ?>%</span>
                             </div>
-                            <?php else: ?>
-                            <div class="stat-trend positive">
-                                <i class="fas fa-circle-check"></i>
-                            </div>
-                            <?php endif; ?>
                         </div>
                         <div class="stat-body">
                             <div class="stat-label">Total Aset</div>
@@ -1272,6 +1276,27 @@ $cash_by_category = get_cash_by_category($koneksi);
         });
 
         console.log('%c SAZEN Laporan & Analisis v3.0 ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
+        
+        // Debug: Log data untuk troubleshooting
+        console.log('Total Aset:', '<?= format_currency($total_aset) ?>');
+        console.log('Saldo Kas:', '<?= format_currency($saldo_kas) ?>');
+        console.log('Nilai Investasi:', '<?= format_currency($total_nilai_investasi) ?>');
+        console.log('ROI Global:', '<?= number_format($roi_global, 2) ?>%');
+        
+        // Check if stat values are visible
+        document.addEventListener('DOMContentLoaded', function() {
+            const statValues = document.querySelectorAll('.stat-value');
+            console.log('Found', statValues.length, 'stat value elements');
+            
+            statValues.forEach((el, index) => {
+                console.log(`Stat ${index + 1}:`, {
+                    text: el.textContent,
+                    display: window.getComputedStyle(el).display,
+                    visibility: window.getComputedStyle(el).visibility,
+                    opacity: window.getComputedStyle(el).opacity
+                });
+            });
+        });
     </script>
 </body>
 </html>

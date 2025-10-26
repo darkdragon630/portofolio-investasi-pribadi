@@ -1,7 +1,7 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * Laporan & Analytics Dashboard
+ * Laporan & Analytics Dashboard - FIXED VERSION
  */
 
 session_start();
@@ -197,52 +197,68 @@ $cash_by_category = get_cash_by_category($koneksi);
     <link rel="stylesheet" href="../css/dashboard.css">
     <style>
         /* ============================================
-           STATS GRID - 8 CARDS COMPLETE LAYOUT
+           STATS GRID - 8 CARDS COMPLETE LAYOUT - FIXED
         ============================================ */
         .stats-grid-complete {
             display: grid;
             gap: 1.5rem;
             margin-bottom: 2rem;
+            width: 100%;
         }
 
-        /* Desktop Large (>= 1400px) - 4 kolom */
-        @media (min-width: 1400px) {
+        /* Desktop Extra Large (>= 1600px) - 4 kolom */
+        @media (min-width: 1600px) {
             .stats-grid-complete {
                 grid-template-columns: repeat(4, 1fr);
             }
         }
 
-        /* Desktop Medium (1024px - 1399px) - 3 kolom */
-        @media (min-width: 1024px) and (max-width: 1399px) {
+        /* Desktop Large (1200px - 1599px) - 4 kolom */
+        @media (min-width: 1200px) and (max-width: 1599px) {
+            .stats-grid-complete {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        /* Desktop Medium (992px - 1199px) - 3 kolom */
+        @media (min-width: 992px) and (max-width: 1199px) {
             .stats-grid-complete {
                 grid-template-columns: repeat(3, 1fr);
             }
         }
 
-        /* Tablet (768px - 1023px) - 2 kolom */
-        @media (min-width: 768px) and (max-width: 1023px) {
+        /* Tablet Large (768px - 991px) - 2 kolom */
+        @media (min-width: 768px) and (max-width: 991px) {
             .stats-grid-complete {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
 
-        /* Mobile (<768px) - 1 kolom */
-        @media (max-width: 767px) {
+        /* Tablet Small (576px - 767px) - 2 kolom */
+        @media (min-width: 576px) and (max-width: 767px) {
+            .stats-grid-complete {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+            }
+        }
+
+        /* Mobile (<576px) - 1 kolom */
+        @media (max-width: 575px) {
             .stats-grid-complete {
                 grid-template-columns: 1fr;
                 gap: 1rem;
             }
         }
 
-        /* Fallback untuk layar sangat besar */
+        /* Default untuk layar sangat besar */
         @media (min-width: 1920px) {
             .stats-grid-complete {
                 grid-template-columns: repeat(4, 1fr);
-                max-width: 1800px;
+                max-width: 100%;
             }
         }
 
-        /* Stat Card Enhanced */
+        /* Stat Card Enhanced - FIXED VISIBILITY */
         .stat-card {
             background: var(--surface-primary);
             border: 1px solid var(--border-color);
@@ -254,6 +270,7 @@ $cash_by_category = get_cash_by_category($koneksi);
             min-height: 160px;
             display: flex;
             flex-direction: column;
+            box-sizing: border-box;
         }
 
         .stat-card::before {
@@ -297,6 +314,7 @@ $cash_by_category = get_cash_by_category($koneksi);
             background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
             color: var(--primary-color);
             transition: all var(--transition-normal);
+            flex-shrink: 0;
         }
 
         .stat-card:hover .stat-icon {
@@ -312,6 +330,7 @@ $cash_by_category = get_cash_by_category($koneksi);
             font-size: 0.75rem;
             font-weight: 700;
             background: rgba(255, 255, 255, 0.05);
+            flex-shrink: 0;
         }
 
         .stat-trend.positive {
@@ -331,6 +350,7 @@ $cash_by_category = get_cash_by_category($koneksi);
             font-weight: 700;
             background: var(--primary-gradient);
             color: white;
+            flex-shrink: 0;
         }
 
         .stat-pulse {
@@ -340,6 +360,7 @@ $cash_by_category = get_cash_by_category($koneksi);
             background: var(--success-color);
             animation: pulse 2s ease-in-out infinite;
             box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            flex-shrink: 0;
         }
 
         .stat-pulse.danger {
@@ -363,6 +384,7 @@ $cash_by_category = get_cash_by_category($koneksi);
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
+            flex-grow: 1;
         }
 
         .stat-label {
@@ -371,19 +393,22 @@ $cash_by_category = get_cash_by_category($koneksi);
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            line-height: 1.4;
         }
 
-        /* Stat Value - Enhanced Visibility */
+        /* Stat Value - MAXIMUM VISIBILITY FIX */
         .stat-value {
-            font-size: 1.75rem;
-            font-weight: 800;
-            color: var(--text-primary);
-            line-height: 1.2;
-            font-feature-settings: 'tnum';
+            font-size: 1.75rem !important;
+            font-weight: 800 !important;
+            color: var(--text-primary) !important;
+            line-height: 1.2 !important;
+            font-feature-settings: 'tnum' !important;
             display: block !important;
             visibility: visible !important;
             opacity: 1 !important;
-            margin: 0.5rem 0;
+            margin: 0.5rem 0 !important;
+            min-height: 2.1rem;
+            word-break: break-word;
         }
 
         .stat-value.highlight {
@@ -391,39 +416,41 @@ $cash_by_category = get_cash_by_category($koneksi);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            font-weight: 900;
+            font-weight: 900 !important;
         }
 
         /* Fallback untuk browser yang tidak support background-clip */
         @supports not (background-clip: text) or not (-webkit-background-clip: text) {
             .stat-value.highlight {
-                color: #667eea;
-                background: none;
-                -webkit-text-fill-color: currentColor;
+                color: #667eea !important;
+                background: none !important;
+                -webkit-text-fill-color: currentColor !important;
             }
         }
 
         /* Firefox specific fix */
         @-moz-document url-prefix() {
             .stat-value.highlight {
-                color: #667eea;
-                background: none;
-                -webkit-text-fill-color: currentColor;
+                color: #667eea !important;
+                background: none !important;
+                -webkit-text-fill-color: currentColor !important;
             }
         }
 
         .stat-value.positive {
-            color: var(--success-color);
+            color: var(--success-color) !important;
         }
 
         .stat-value.negative {
-            color: var(--danger-color);
+            color: var(--danger-color) !important;
         }
 
         .stat-footer {
             font-size: 0.813rem;
             color: var(--text-muted);
             font-weight: 500;
+            line-height: 1.4;
+            margin-top: auto;
         }
 
         /* Card Color Variants */
@@ -469,6 +496,49 @@ $cash_by_category = get_cash_by_category($koneksi);
         .stat-card.stat-gradient .stat-icon {
             background: var(--primary-gradient);
             color: white;
+        }
+
+        /* Responsive adjustments untuk card content */
+        @media (max-width: 1199px) {
+            .stat-value {
+                font-size: 1.5rem !important;
+            }
+            
+            .stat-card {
+                min-height: 140px;
+                padding: 1.25rem;
+            }
+        }
+
+        @media (max-width: 767px) {
+            .stat-value {
+                font-size: 1.5rem !important;
+            }
+            
+            .stat-card {
+                min-height: 130px;
+                padding: 1rem;
+            }
+            
+            .stat-icon {
+                width: 40px;
+                height: 40px;
+                font-size: 1.25rem;
+            }
+            
+            .stat-label {
+                font-size: 0.813rem;
+            }
+            
+            .stat-footer {
+                font-size: 0.75rem;
+            }
+        }
+
+        /* Ensure grid container doesn't overflow */
+        .stats-overview {
+            width: 100%;
+            overflow: visible;
         }
 
         /* Additional Styles for Laporan */
@@ -622,6 +692,10 @@ $cash_by_category = get_cash_by_category($koneksi);
             .performance-table th,
             .performance-table td {
                 padding: 0.75rem 0.5rem;
+            }
+            
+            .export-buttons {
+                flex-direction: column;
             }
         }
     </style>
@@ -1275,27 +1349,42 @@ $cash_by_category = get_cash_by_category($koneksi);
             });
         });
 
-        console.log('%c SAZEN Laporan & Analisis v3.0 ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
+        console.log('%c SAZEN Laporan & Analisis v3.0 - FIXED ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
         
-        // Debug: Log data untuk troubleshooting
-        console.log('Total Aset:', '<?= format_currency($total_aset) ?>');
-        console.log('Saldo Kas:', '<?= format_currency($saldo_kas) ?>');
-        console.log('Nilai Investasi:', '<?= format_currency($total_nilai_investasi) ?>');
-        console.log('ROI Global:', '<?= number_format($roi_global, 2) ?>%');
+        // Debug: Log responsive breakpoints
+        window.addEventListener('resize', function() {
+            const width = window.innerWidth;
+            let breakpoint = '';
+            if (width >= 1600) breakpoint = 'Desktop XL (4 cols)';
+            else if (width >= 1200) breakpoint = 'Desktop L (4 cols)';
+            else if (width >= 992) breakpoint = 'Desktop M (3 cols)';
+            else if (width >= 768) breakpoint = 'Tablet (2 cols)';
+            else if (width >= 576) breakpoint = 'Mobile L (2 cols)';
+            else breakpoint = 'Mobile S (1 col)';
+            console.log('Current breakpoint:', breakpoint, '| Width:', width);
+        });
         
-        // Check if stat values are visible
+        // Check if stat values are visible on load
         document.addEventListener('DOMContentLoaded', function() {
             const statValues = document.querySelectorAll('.stat-value');
-            console.log('Found', statValues.length, 'stat value elements');
+            console.log('✅ Found', statValues.length, 'stat value elements');
             
             statValues.forEach((el, index) => {
+                const styles = window.getComputedStyle(el);
                 console.log(`Stat ${index + 1}:`, {
-                    text: el.textContent,
-                    display: window.getComputedStyle(el).display,
-                    visibility: window.getComputedStyle(el).visibility,
-                    opacity: window.getComputedStyle(el).opacity
+                    text: el.textContent.trim(),
+                    display: styles.display,
+                    visibility: styles.visibility,
+                    opacity: styles.opacity,
+                    fontSize: styles.fontSize
                 });
             });
+            
+            // Grid check
+            const grid = document.querySelector('.stats-grid-complete');
+            if (grid) {
+                console.log('Grid template columns:', window.getComputedStyle(grid).gridTemplateColumns);
+            }
         });
     </script>
 </body>

@@ -14,6 +14,8 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+echo $_SESSION['flash'] ?? '';  
+
 // Get user info
 $username = $_SESSION['username'];
 $email = $_SESSION['email'];

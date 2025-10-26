@@ -20,6 +20,17 @@ if (!isset($_GET['id'])) {
 
 $id = (int)$_GET['id'];
 
+// DEBUG: Tampilkan struktur data
+echo "<pre>";
+echo "Data yang ditemukan:\n";
+print_r($cash);
+echo "\n\nKolom yang tersedia:\n";
+if ($cash) {
+    print_r(array_keys($cash));
+}
+echo "</pre>";
+die(); // Stop dulu untuk debug
+
 // Get cash balance detail
 $cash = get_cash_transaction_by_id($koneksi, $id);
 

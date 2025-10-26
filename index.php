@@ -144,7 +144,7 @@ $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugi
     <!-- Loading Screen -->
     <div class="loading-screen" id="loadingScreen">
         <div class="loading-content">
-            <div class="loading-logo"><i class="fas fa-chart-line"></i></div>
+            <img src="Luminark_Holdings.png" alt="Luminark Logo" class="logo-icon">
             <div class="loading-spinner"><div class="spinner"></div></div>
             <div class="loading-text">Memuat Portofolio...</div>
             <div class="loading-progress"><div class="progress-bar" id="loadingProgress"></div></div>

@@ -22,18 +22,9 @@ $id = (int)$_GET['id'];
 
 // Get cash balance detail
 function get_cash_transaction_by_id($koneksi, $id)
-try {
-    $sql = "SELECT * FROM cash_balance WHERE id = ? AND user_id = ?";
-    $stmt = $koneksi->prepare($sql);
-    $stmt->execute([$id, $_SESSION['user_id']]);
-    $cash = $stmt->fetch();
-    
-    if (!$cash) {
-        redirect_with_message("../dashboard.php", 'error', 'Data cash balance tidak ditemukan');
-    }
-} catch (PDOException $e) {
-    error_log("Get cash detail error: " . $e->getMessage());
-    redirect_with_message("../dashboard.php", 'error', 'Terjadi kesalahan saat mengambil data');
+
+if (!$cash) {
+    redirect_with_message("../dashboard.php", 'error', 'Data cash balance tidak ditemukan');
 }
 ?>
 <!DOCTYPE html>

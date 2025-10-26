@@ -130,28 +130,34 @@ function get_cash_by_category($koneksi) {
  * @param int $limit Number of records
  * @return array
  */
-function get_recent_cash_transactions($koneksi, $limit = 10) {
+function get_recent_cash_transactions($koneksi, $limit = null)
+{
     try {
-        $sql = "SELECT * FROM cash_balance 
-                ORDER BY tanggal DESC, created_at DESC 
-                LIMIT :limit";
-        
+        $sql = "SELECT * 
+                FROM cash_balance 
+                ORDER BY tanggal DESC, created_at DESC";
+
+        // Tambahkan LIMIT hanya bila diperlukan
+        if ($limit !== null && $limit > 0) {
+            $sql .= " LIMIT :limit";
+        }
+
         $stmt = $koneksi->prepare($sql);
-        // ✅ PERBAIKAN: Bind dengan PDO::PARAM_INT, bukan string!
-        $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+
+        // Bind parameter hanya kalau LIMIT ada
+        if ($limit !== null && $limit > 0) {
+            $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+        }
+
         $stmt->execute();
-        
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Debug log
-        error_log("get_recent_cash_transactions: Found " . count($results) . " records (limit: $limit)");
-        
+
+        error_log("get_recent_cash_transactions: " . count($results) . " rows" .
+                  ($limit ? " (limit $limit)" : " (no limit)"));
         return $results;
+
     } catch (PDOException $e) {
         error_log("Error get_recent_cash_transactions: " . $e->getMessage());
-        if (isset($stmt)) {
-            error_log("SQL Error: " . print_r($stmt->errorInfo(), true));
-        }
         return [];
     }
 }
@@ -398,7 +404,8 @@ function add_sale_transaction($koneksi, $data) {
  * @param int|null $limit Number of records
  * @return array
  */
-function get_sale_transactions($koneksi, $limit = null) {
+function get_sale_transactions($koneksi, $limit = null)
+{
     try {
         $sql = "SELECT 
                     tj.*,
@@ -409,37 +416,34 @@ function get_sale_transactions($koneksi, $limit = null) {
                         WHEN tj.profit_loss > 0 THEN 'profit'
                         WHEN tj.profit_loss < 0 THEN 'loss'
                         ELSE 'break_even'
-                    END as status_transaksi
+                    END AS status_transaksi
                 FROM transaksi_jual tj
                 JOIN investasi i ON tj.investasi_id = i.id
                 JOIN kategori k ON i.kategori_id = k.id
                 ORDER BY tj.tanggal_jual DESC";
-        
+
         if ($limit !== null && $limit > 0) {
             $sql .= " LIMIT :limit";
-            $stmt = $koneksi->prepare($sql);
-            // ✅ PERBAIKAN: Bind dengan PDO::PARAM_INT!
-            $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
-            $stmt->execute();
-        } else {
-            $stmt = $koneksi->query($sql);
         }
-        
+
+        $stmt = $koneksi->prepare($sql);
+
+        if ($limit !== null && $limit > 0) {
+            $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+        }
+
+        $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Debug log
-        error_log("get_sale_transactions: Found " . count($results) . " records (limit: " . ($limit ?? 'all') . ")");
-        
+
+        error_log("get_sale_transactions: " . count($results) . " rows" .
+                  ($limit ? " (limit $limit)" : " (no limit)"));
         return $results;
+
     } catch (PDOException $e) {
         error_log("Error get_sale_transactions: " . $e->getMessage());
-        if (isset($stmt)) {
-            error_log("SQL Error: " . print_r($stmt->errorInfo(), true));
-        }
         return [];
     }
 }
-
 /**
  * Get sale transaction by ID
  * @param PDO $koneksi Database connection

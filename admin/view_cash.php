@@ -19,6 +19,8 @@ if (!isset($_GET['id'])) {
 }
 
 $id = (int)$_GET['id'];
+// Get cash balance detail
+$cash = get_cash_transaction_by_id($koneksi, $id);
 
 // DEBUG: Tampilkan struktur data
 echo "<pre>";
@@ -30,9 +32,6 @@ if ($cash) {
 }
 echo "</pre>";
 die(); // Stop dulu untuk debug
-
-// Get cash balance detail
-$cash = get_cash_transaction_by_id($koneksi, $id);
 
 if (!$cash) {
     redirect_with_message("../dashboard.php", 'error', 'Data cash balance tidak ditemukan');

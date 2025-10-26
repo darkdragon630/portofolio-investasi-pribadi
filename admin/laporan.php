@@ -25,12 +25,6 @@ if (isset($_POST['logout'])) {
     exit;
 }
 
-// Get flash message
-<?= flash('success') ?>
-<?= flash('error') ?>
-<?= flash('warning') ?>
-<?= flash('info') ?>
-
 // Date Range Filter
 $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-01-01');
 $end_date = isset($_GET['end_date']) ? $_GET['end_date'] : date('Y-m-d');
@@ -465,19 +459,10 @@ $cash_by_category = get_cash_by_category($koneksi);
         </header>
 
         <!-- Flash Messages -->
-        <?php if ($flash): ?>
-            <div class="flash-message flash-<?= $flash['type'] ?>" id="flashMessage">
-                <div class="flash-icon">
-                    <i class="fas fa-<?= $flash['type'] == 'success' ? 'check-circle' : 'exclamation-circle' ?>"></i>
-                </div>
-                <div class="flash-content">
-                    <div class="flash-text"><?= htmlspecialchars($flash['message']) ?></div>
-                </div>
-                <button class="flash-close" onclick="closeFlash()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-        <?php endif; ?>
+        <?= flash('success') ?>
+        <?= flash('error') ?>
+        <?= flash('warning') ?>
+        <?= flash('info') ?>
 
         <div class="container">
 
@@ -689,7 +674,7 @@ $cash_by_category = get_cash_by_category($koneksi);
                         <i class="fas fa-star"></i>
                         Top 10 Investasi Terbaik
                     </h2>
-                </div>
+                    </div>
                 <div class="card-body">
                     <div class="table-responsive">
                         <table class="performance-table">
@@ -819,15 +804,16 @@ $cash_by_category = get_cash_by_category($koneksi);
             }
         });
 
-        // Flash Message
-        function closeFlash() {
-            const flash = document.getElementById('flashMessage');
-            if (flash) {
-                flash.style.animation = 'slideOut 0.3s ease';
-                setTimeout(() => flash.remove(), 300);
-            }
-        }
-        setTimeout(closeFlash, 5000);
+        // Flash Message Auto-close
+        document.addEventListener('DOMContentLoaded', function() {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                setTimeout(() => {
+                    alert.style.animation = 'slideOut 0.3s ease';
+                    setTimeout(() => alert.remove(), 300);
+                }, 5000);
+            });
+        });
 
         // Monthly Performance Chart
         <?php if (count($monthly_profit) > 0 || count($monthly_loss) > 0): ?>
@@ -1017,3 +1003,4 @@ $cash_by_category = get_cash_by_category($koneksi);
     </script>
 </body>
 </html>
+

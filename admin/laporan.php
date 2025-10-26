@@ -25,11 +25,6 @@ if (isset($_POST['logout'])) {
     exit;
 }
 
-// Get flash message
-<?= flash('success') ?>
-<?= flash('error') ?>
-<?= flash('warning') ?>
-<?= flash('info') ?>
 
 // Date Range Filter
 $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-01-01');
@@ -478,6 +473,12 @@ $cash_by_category = get_cash_by_category($koneksi);
                 </button>
             </div>
         <?php endif; ?>
+
+        // Get flash message
+        <?= flash('success') ?>
+        <?= flash('error') ?>
+        <?= flash('warning') ?>
+        <?= flash('info') ?>
 
         <div class="container">
 

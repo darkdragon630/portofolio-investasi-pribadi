@@ -625,7 +625,6 @@ $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugi
     </div>
 
     <!-- Scripts -->
-    <script src="assets/js/landing.js"></script>
     <script>
     window.addEventListener('load', function () {
         const loadingScreen = document.getElementById('loadingScreen');

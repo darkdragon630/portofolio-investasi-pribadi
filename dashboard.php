@@ -163,9 +163,9 @@ $total_transaksi_kerugian = array_sum(array_column($sumber_kerugian_stats, 'juml
 /* ========================================
    RECENT DATA
 ======================================== */
-$investasi_list = array_slice($investasi_all, 0, 6);
-$cash_transactions = get_recent_cash_transactions($koneksi, 6);
-$sales_list = get_sale_transactions($koneksi, 6);
+$investasi_list = array_slice($investasi_all, 0);
+$cash_transactions = get_recent_cash_transactions($koneksi);
+$sales_list = get_sale_transactions($koneksi);
 $cash_by_category = get_cash_by_category($koneksi);
 
 $keuntungan_list = $koneksi->query("
@@ -173,7 +173,7 @@ $keuntungan_list = $koneksi->query("
     FROM keuntungan_investasi ki
     JOIN investasi i ON ki.investasi_id = i.id
     JOIN kategori k ON ki.kategori_id = k.id
-    ORDER BY ki.tanggal_keuntungan DESC LIMIT 6
+    ORDER BY ki.tanggal_keuntungan DESC 
 ")->fetchAll();
 
 $kerugian_list = $koneksi->query("
@@ -181,7 +181,7 @@ $kerugian_list = $koneksi->query("
     FROM kerugian_investasi kr
     JOIN investasi i ON kr.investasi_id = i.id
     JOIN kategori k ON kr.kategori_id = k.id
-    ORDER BY kr.tanggal_kerugian DESC LIMIT 6
+    ORDER BY kr.tanggal_kerugian DESC 
 ")->fetchAll();
 
 $flash = $_SESSION['_flash'] ?? null;

@@ -123,15 +123,14 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100vh;
 }
 
-.logo-icon {
-  width: 80px; /* ubah sesuai kebutuhan */
+.loading-content .logo-icon {
+  width: 80px;
   height: auto;
   animation: glow 2s infinite alternate;
-  justify-content: center;
-  align-items: center;
+  display: block;
+  margin: 0 auto 2rem;
 }
 
 /* Efek bercahaya lembut */

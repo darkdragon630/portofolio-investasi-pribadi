@@ -741,9 +741,7 @@ $flash = $_SESSION['_flash'] ?? null;
                                         </div>
                                         <div class="data-actions">
                                             <?php if (!empty($cash['bukti_file'])): ?>
-                                                <a href="admin/view_cash.php?id=<?= $cash['id'] ?>"
-                                                   class="btn-icon" 
-                                                   title="Lihat Bukti" 
+                                                <a href="admin/view_cash.php?id=<?= $cash['id'] ?>"class="btn-icon" title="Detail">
                                                     <i class="fas fa-eye"></i>
                                                 </a>
                                             <?php endif; ?>

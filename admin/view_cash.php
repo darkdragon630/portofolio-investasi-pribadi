@@ -5,6 +5,14 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+/ DEBUG: Tampilkan semua parameter
+echo "<pre>";
+echo "GET params: ";
+print_r($_GET);
+echo "\nID: " . (isset($_GET['id']) ? $_GET['id'] : 'TIDAK ADA');
+echo "</pre>";
+die(); // Stop di sini dulu untuk debug
+
 session_start();
 require_once "../config/koneksi.php";
 require_once "../config/functions.php";

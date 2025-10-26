@@ -35,9 +35,6 @@ if (!$cash) {
     exit;
 }
 
-// Get categories
-$categories = $koneksi->query("SELECT * FROM kategori ORDER BY nama_kategori")->fetchAll();
-
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $judul = trim($_POST['judul']);
@@ -95,8 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     jumlah = ?, 
                     tanggal = ?, 
                     keterangan = ?, 
-                    bukti_file = ?,
-                    kategori_id = ?
+                    bukti_file = ?
                     WHERE id = ?";
             
             $stmt = $koneksi->prepare($sql);
@@ -108,7 +104,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tanggal, 
                 $keterangan, 
                 $bukti_file,
-                $kategori_id,
                 $cash_id
             ]);
             
@@ -603,20 +598,6 @@ $page_title = "Edit Transaksi Kas";
                             <option value="investasi" <?= $cash['kategori'] == 'investasi' ? 'selected' : '' ?>>Investasi</option>
                             <option value="pendapatan" <?= $cash['kategori'] == 'pendapatan' ? 'selected' : '' ?>>Pendapatan</option>
                             <option value="lainnya" <?= $cash['kategori'] == 'lainnya' ? 'selected' : '' ?>>Lainnya</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="kategori_id">
-                            <i class="fas fa-folder"></i> Kategori Investasi (Opsional)
-                        </label>
-                        <select id="kategori_id" name="kategori_id">
-                            <option value="">-- Tidak Ada --</option>
-                            <?php foreach ($categories as $cat): ?>
-                                <option value="<?= $cat['id'] ?>" <?= $cash['kategori_id'] == $cat['id'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($cat['nama_kategori']) ?>
-                                </option>
-                            <?php endforeach; ?>
                         </select>
                     </div>
                 </div>

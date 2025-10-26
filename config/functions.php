@@ -175,6 +175,60 @@ function get_cash_transaction_by_id($koneksi, $id) {
 }
 
 /**
+ * Get cash transaction detail for view (mirip get_sale_transaction)
+ * @param PDO $koneksi Database connection
+ * @param int $id Transaction ID
+ * @return array|null
+ */
+function get_cash_transaction_detail($koneksi, $id) {
+    try {
+        $sql = "SELECT * FROM cash_balance WHERE id = ?";
+        $stmt = $koneksi->prepare($sql);
+        $stmt->execute([$id]);
+        $cash = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$cash) {
+            return null;
+        }
+        
+        // Hitung saldo sebelum transaksi ini
+        $sql_before = "SELECT COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE -jumlah END), 0) as saldo
+                       FROM cash_balance 
+                       WHERE (tanggal < ? OR (tanggal = ? AND id < ?))
+                       ORDER BY tanggal, id";
+        $stmt_before = $koneksi->prepare($sql_before);
+        $stmt_before->execute([$cash['tanggal'], $cash['tanggal'], $id]);
+        $saldo_sebelum = (float)$stmt_before->fetchColumn();
+        
+        // Calculate saldo setelah
+        $jumlah = (float)$cash['jumlah'];
+        $saldo_setelah = $saldo_sebelum + ($cash['tipe'] == 'masuk' ? $jumlah : -$jumlah);
+        
+        // Map ke format yang diharapkan di view
+        return [
+            'id' => $cash['id'],
+            'tanggal_transaksi' => $cash['tanggal'],
+            'judul' => $cash['judul'],
+            'jenis_transaksi' => $cash['tipe'], // 'masuk' atau 'keluar'
+            'jumlah' => $jumlah,
+            'kategori' => $cash['kategori'],
+            'keterangan' => $cash['keterangan'] ?? '',
+            'sumber' => '', // Tidak ada kolom ini, untuk kompatibilitas view
+            'bukti_file' => $cash['bukti_file'] ?? null,
+            'saldo_sebelum' => $saldo_sebelum,
+            'saldo_setelah' => $saldo_setelah,
+            'referensi_id' => $cash['referensi_id'] ?? null,
+            'created_at' => $cash['created_at'] ?? null,
+            'updated_at' => $cash['updated_at'] ?? null
+        ];
+        
+    } catch (PDOException $e) {
+        error_log("Error get_cash_transaction_detail: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
  * Update cash transaction
  * @param PDO $koneksi Database connection
  * @param int $id Transaction ID

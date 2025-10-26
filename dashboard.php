@@ -744,7 +744,6 @@ $flash = $_SESSION['_flash'] ?? null;
                                                 <a href="admin/view_cash.php?id=<?= $cash['id'] ?>"
                                                    class="btn-icon" 
                                                    title="Lihat Bukti" 
-                                                   target="_blank">
                                                     <i class="fas fa-eye"></i>
                                                 </a>
                                             <?php endif; ?>

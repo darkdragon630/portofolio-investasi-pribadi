@@ -131,7 +131,7 @@ $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugi
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
     <meta name="description" content="Portofolio Investasi Pribadi - Muhammad Burhanudin Syaifullah Azmi">
     <meta name="author" content="SAAZ">
-    <title>Portofolio Investasi - Shoutaverse Capital Group v3.0</title>
+    <title>Portofolio Investasi - LUMINARK HOLDINGS v3.0</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -166,7 +166,7 @@ $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugi
                         <div class="logo-pulse"></div>
                     </div>
                     <div class="logo-text">
-                        <h1 class="logo-title">Shoutaverse Capital Group</h1>
+                        <h1 class="logo-title">LUMINARK HOLDINGS</h1>
                         <p class="logo-subtitle">Portfolio Manager v3.0</p>
                     </div>
                 </div>
@@ -553,7 +553,7 @@ $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugi
                 <div class="footer-brand">
                     <div class="footer-logo">
                         <i class="fas fa-chart-line"></i>
-                        <span>Shoutaverse Capital Group</span>
+                        <span>LUMINARK HOLDINGS</span>
                     </div>
                     <p class="footer-tagline">Investment Portfolio Manager v3.0</p>
                     <p class="footer-copyright">&copy; <?= date('Y') ?> Muhammad Burhanudin Syaifullah Azmi. All rights reserved.</p>

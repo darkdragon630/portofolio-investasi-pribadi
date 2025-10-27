@@ -295,7 +295,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <label class="radio-card">
                             <input type="radio" name="sumber_keuntungan" value="imbal_hasil" required>
                             <div class="radio-content">
-                                <i class="fas fa-coins"></i>i>
+                                <i class="fas fa-coins"></i>
                                 <span>Imbal Hasil</span>
                             </div>
                         </label>

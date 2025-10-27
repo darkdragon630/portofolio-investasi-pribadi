@@ -164,7 +164,12 @@ if (!function_exists('parse_currency_fixed')) {
         
         // Remove any remaining non-numeric except dots and commas
         $value = preg_replace('/[^\d\.\,]/', '', $value);
-        
+        // ⭐ CRITICAL FIX: Handle 0,82 or ,82 early
+        if (preg_match('/^0?,\d{1,2}$/', $value)) {
+            // Desimal Indonesia: 0,82 → 0.82
+            $value = str_replace(',', '.', $value);
+            return floatval($value);
+        }
         // Count dots and commas to determine format
         $dotCount = substr_count($value, '.');
         $commaCount = substr_count($value, ',');

@@ -360,4 +360,96 @@ function display_file_from_db($bukti_file) {
     echo base64_decode($file_data['base64_data']);
     exit;
 }
+
+/**
+ * Get flash message - KOMPATIBEL DENGAN DUA CARA
+ * Cara 1: get_flash_message() - return array atau null
+ * Cara 2: get_flash_message('success') - return string atau null
+ * 
+ * @param string|null $type Optional type parameter
+ * @return mixed
+ */
+if (!function_exists('get_flash_message')) {
+    function get_flash_message($type = null) {
+        // Jika ada parameter type - ambil pesan specific
+        if ($type !== null) {
+            if (isset($_SESSION['_flash'][$type])) {
+                $msg = $_SESSION['_flash'][$type];
+                unset($_SESSION['_flash'][$type]);
+                return $msg;
+            }
+            return null;
+        }
+        
+        // Jika tanpa parameter - ambil pesan dari flash_message (cara lama)
+        if (isset($_SESSION['flash_message'])) {
+            $flash = $_SESSION['flash_message'];
+            unset($_SESSION['flash_message']);
+            return $flash;
+        }
+        
+        return null;
+    }
+}
+
+/**
+ * Set flash message
+ * @param string $type Type: success, error, warning, info
+ * @param string $message Message text
+ */
+if (!function_exists('set_flash_message')) {
+    function set_flash_message($type, $message) {
+        $_SESSION['_flash'][$type] = $message;
+    }
+}
+
+/**
+ * Redirect with flash message - UPDATED
+ * Kompatibel dengan get_flash_message() tanpa parameter
+ * 
+ * @param string $url Destination URL
+ * @param string $type Message type
+ * @param string $message Message text
+ */
+if (!function_exists('redirect_with_message')) {
+    function redirect_with_message($url, $type, $message) {
+        // Set menggunakan cara lama (flash_message) untuk kompatibilitas
+        $_SESSION['flash_message'] = [
+            'type' => $type,
+            'message' => $message
+        ];
+        header("Location: $url");
+        exit;
+    }
+}
+
+/**
+ * Display flash message HTML
+ * @param string $type Type of message
+ * @return string HTML or empty string
+ */
+if (!function_exists('flash')) {
+    function flash($type) {
+        $msg = get_flash_message($type);
+        if (!$msg) {
+            return '';
+        }
+        
+        $icons = [
+            'success' => 'check-circle',
+            'error'   => 'exclamation-circle',
+            'warning' => 'exclamation-triangle',
+            'info'    => 'info-circle'
+        ];
+        
+        $icon = $icons[$type] ?? 'info-circle';
+        
+        return <<<HTML
+        <div class="alert alert-{$type}">
+            <i class="fas fa-{$icon}"></i>
+            <span>{$msg}</span>
+        </div>
+HTML;
+    }
+}
 ?>

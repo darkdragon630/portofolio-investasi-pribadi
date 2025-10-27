@@ -9,9 +9,9 @@
 // Database credentials
 // ==============================
 define('DB_HOST', 'db.fr-pari1.bengt.wasmernet.com');
-define('DB_NAME', 'dbZb4QNAPGCaSBe3NVYBnouq');
-define('DB_USER', 'e61cb3bc79fb8000f33b553f2fce');
-define('DB_PASS', '068fe61c-b3bc-7ba3-8000-f82bbb24f2a2');
+define('DB_NAME', 'dbRvXBrhE5kk945ac7gqVTNN');
+define('DB_USER', 'f141e6017c7d8000353a742134d7');
+define('DB_PASS', '068ff141-e601-7e29-8000-3aba0db6a393');
 define('DB_PORT', 10272);
 define('DB_CHARSET', 'utf8mb4');
 

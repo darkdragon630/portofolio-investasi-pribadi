@@ -285,6 +285,12 @@ if (!function_exists('parse_currency_fixed')) {
     }
 }
 
+if (!function_exists('parse_currency')) {
+    function parse_currency($value) {
+        return parse_currency_fixed($value);
+    }
+}
+
 /**
  * Format currency for display
  */

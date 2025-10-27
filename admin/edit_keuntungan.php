@@ -370,7 +370,7 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                                    <?= $keuntungan['sumber_keuntungan'] == 'imbal_hasil' ? 'checked' : '' ?> 
                                    required>
                             <div class="radio-content">
-                                <i class="fas fa-coins"></i>i>
+                                <i class="fas fa-coins"></i>
                                 <span>Imbal Hasil</span>
                             </div>
                         </label>

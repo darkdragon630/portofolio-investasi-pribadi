@@ -48,7 +48,12 @@ document.getElementById('jumlah_keuntungan').addEventListener('blur', function()
     if (!profitRaw || amount <= 0) return;
     
     // Parse profit (remove dots and replace comma with dot)
-    const profit = parseFloat(profitRaw.replace(/\./g, '').replace(',', '.'));
+    const profit = parseFloat(
+    profitRaw
+        .replace(/[^\d,.]/g, '')
+        .replace(/\./g, '')
+        .replace(/,/g, '.')
+) || 0;
     
     if (profit >= 0) {
         const percentage = (profit / amount) * 100;
@@ -209,9 +214,13 @@ function handleDrop(e) {
 // FORM VALIDATION
 // ===================================
 document.querySelector('.data-form').addEventListener('submit', function(e) {
-    const jumlah = document.getElementById('jumlah_keuntungan').value.replace(/[^\d]/g, '');
-    
-    if (!jumlah || parseInt(jumlah) < 0) {
+    const raw = document.getElementById('jumlah_keuntungan').value
+                 .replace(/[^\d,.]/g, '')
+                 .replace(/\./g, '')
+                 .replace(/,/g, '.');
+    const jumlah = parseFloat(raw) || 0;
+
+    if (jumlah <= 0) {
         e.preventDefault();
         alert('Jumlah keuntungan harus diisi dan tidak boleh negatif!');
         return false;

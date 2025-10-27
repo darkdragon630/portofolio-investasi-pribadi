@@ -14,65 +14,6 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-/**
- * Parse currency input correctly - SUPER FIXED VERSION
- * Handles formats: 1500000, 1.500.000, 1,500,000, 0.82, 0,82
- */
-function parse_currency_fixed($value) {
-    if (empty($value)) return 0;
-    
-    $value = trim($value);
-    $value = preg_replace('/[Rp\s]/', '', $value);
-    $value = preg_replace('/[^\d\.\,]/', '', $value);
-    
-    $dotCount = substr_count($value, '.');
-    $commaCount = substr_count($value, ',');
-    
-    if ($dotCount > 0 && $commaCount > 0) {
-        $lastDot = strrpos($value, '.');
-        $lastComma = strrpos($value, ',');
-        
-        if ($lastDot > $lastComma) {
-            $value = str_replace(',', '', $value);
-        } else {
-            $value = str_replace('.', '', $value);
-            $value = str_replace(',', '.', $value);
-        }
-    }
-    else if ($dotCount > 0) {
-        if ($dotCount > 1) {
-            $value = str_replace('.', '', $value);
-        } else {
-            $parts = explode('.', $value);
-            if (count($parts) === 2 && isset($parts[1])) {
-                if (strlen($parts[1]) <= 2) {
-                    // Keep as decimal
-                } else {
-                    $value = str_replace('.', '', $value);
-                }
-            }
-        }
-    }
-    else if ($commaCount > 0) {
-        if ($commaCount > 1) {
-            $value = str_replace(',', '', $value);
-        } else {
-            $parts = explode(',', $value);
-            if (count($parts) === 2 && isset($parts[1])) {
-                if (strlen($parts[1]) <= 2) {
-                    $value = str_replace(',', '.', $value);
-                } else {
-                    $value = str_replace(',', '', $value);
-                }
-            } else {
-                $value = str_replace(',', '', $value);
-            }
-        }
-    }
-    
-    return floatval($value);
-}
-
 // Get investments for dropdown
 $sql_investasi = "
     SELECT i.id, i.judul_investasi, i.jumlah, k.nama_kategori, i.kategori_id 
@@ -102,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $judul_keuntungan = sanitize_input($_POST['judul_keuntungan'] ?? '');
         $deskripsi = sanitize_input($_POST['deskripsi'] ?? '');
         
-        // USE FIXED PARSER
+        // USE parse_currency_fixed FROM koneksi.php
         $jumlah_keuntungan = parse_currency_fixed($_POST['jumlah_keuntungan'] ?? '0');
         
         // Debug log (optional - remove in production)

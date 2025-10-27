@@ -839,20 +839,20 @@ $recent_activities = $koneksi->query("
                         <div class="form-group">
                             <label class="form-label">Format Tanggal</label>
                             <select name="date_format" class="form-input">
-                                <option value="d/m/Y" <?= $app_settings['date_format'] === 'd/m/Y' ? 'selected' : '' ?>>DD/MM/YYYY</option>
-                                <option value="m/d/Y" <?= $app_settings['date_format'] === 'm/d/Y' ? 'selected' : '' ?>>MM/DD/YYYY</option>
-                                <option value="Y-m-d" <?= $app_settings['date_format'] === 'Y-m-d' ? 'selected' : '' ?>>YYYY-MM-DD</option>
-                                <option value="d M Y" <?= $app_settings['date_format'] === 'd M Y' ? 'selected' : '' ?>>DD Mon YYYY</option>
+                                <option value="d/m/Y" <?php echo $app_settings['date_format'] === 'd/m/Y' ? 'selected' : ''; ?>>DD/MM/YYYY</option>
+                                <option value="m/d/Y" <?php echo $app_settings['date_format'] === 'm/d/Y' ? 'selected' : ''; ?>>MM/DD/YYYY</option>
+                                <option value="Y-m-d" <?php echo $app_settings['date_format'] === 'Y-m-d' ? 'selected' : ''; ?>>YYYY-MM-DD</option>
+                                <option value="d M Y" <?php echo $app_settings['date_format'] === 'd M Y' ? 'selected' : ''; ?>>DD Mon YYYY</option>
                             </select>
                         </div>
 
                         <div class="form-group">
                             <label class="form-label">Item per Halaman</label>
                             <select name="items_per_page" class="form-input">
-                                <option value="10" <?= $app_settings['items_per_page'] == 10 ? 'selected' : '' ?>>10</option>
-                                <option value="25" <?= $app_settings['items_per_page'] == 25 ? 'selected' : '' ?>>25</option>
-                                <option value="50" <?= $app_settings['items_per_page'] == 50 ? 'selected' : '' ?>>50</option>
-                                <option value="100" <?= $app_settings['items_per_page'] == 100 ? 'selected' : '' ?>>100</option>
+                                <option value="10" <?php echo $app_settings['items_per_page'] == 10 ? 'selected' : ''; ?>>10</option>
+                                <option value="25" <?php echo $app_settings['items_per_page'] == 25 ? 'selected' : ''; ?>>25</option>
+                                <option value="50" <?php echo $app_settings['items_per_page'] == 50 ? 'selected' : ''; ?>>50</option>
+                                <option value="100" <?php echo $app_settings['items_per_page'] == 100 ? 'selected' : ''; ?>>100</option>
                             </select>
                         </div>
 

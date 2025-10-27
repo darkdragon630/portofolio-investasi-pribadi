@@ -62,15 +62,24 @@ document.getElementById('jumlah_keuntungan').addEventListener('blur', function()
 // ===================================
 const jumlahInput = document.getElementById('jumlah_keuntungan');
 
+// Blur: format ribuan saja, tidak hapus koma desimal
 jumlahInput.addEventListener('blur', function() {
-    let value = this.value.replace(/[^\d]/g, '');
-    if (value) {
-        this.value = parseInt(value).toLocaleString('id-ID');
-    }
+    let v = this.value
+        .replace(/[^\d,.]/g, '')     // buang selain digit, koma, titik
+        .replace(/,/g, '#')          // tandai koma asli
+        .replace(/\./g, '')          // buang titik ribuan sementara
+        .replace(/#/g, '.');         // kembalikan koma jadi titik desimal
+
+    const num = parseFloat(v) || 0;
+    this.value = num.toLocaleString('id-ID', { minimumFractionDigits: 2 });
 });
 
+// Focus: kembalikan ke bentuk asli
 jumlahInput.addEventListener('focus', function() {
-    this.value = this.value.replace(/[^\d]/g, '');
+    this.value = this.value
+        .replace(/[^\d,.]/g, '')
+        .replace(/\./g, '')   // buang titik ribuan
+        .replace(/,/g, '.');  // koma jadi titik desimal
 });
 
 

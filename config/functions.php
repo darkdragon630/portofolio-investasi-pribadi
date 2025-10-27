@@ -1,25 +1,19 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * Additional Helper Functions - FIXED VERSION
+ * Additional Helper Functions - FIXED VERSION v3.0.2
  * 
- * File ini adalah ADDON untuk koneksi.php
- * Berisi fungsi-fungsi khusus untuk:
- * - Cash Balance Management
- * - Transaksi Jual Investasi
- * - Utility Functions
- * 
- * PERBAIKAN v3.0.1:
+ * PERBAIKAN v3.0.2:
+ * ✅ REMOVED duplicate flash message functions (sudah ada di koneksi.php)
  * ✅ Fixed PDO binding untuk LIMIT (harus PDO::PARAM_INT)
  * ✅ Fixed fetchAll() untuk return PDO::FETCH_ASSOC
  * ✅ Added better error handling dan logging
- * ✅ Fixed duplicate function declaration (format_currency)
  * 
  * CATATAN: 
+ * - Flash message functions (set_flash_message, get_flash_message, flash) 
+ *   sudah ada di koneksi.php - JANGAN DIDUPLIKASI!
  * - Fungsi upload file sudah ada di koneksi.php
  * - Fungsi format_currency() sudah ada di koneksi.php
- * - Menggunakan JSON-based storage (base64) dari koneksi.php
- * - Fungsi handle_file_upload_to_db() digunakan untuk cash & sales
  */
 
 // ========================================
@@ -43,7 +37,6 @@ function get_cash_balance($koneksi) {
         $stmt = $koneksi->query($sql);
         $result = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        // Return default values if no data
         if (!$result || $result['total_transaksi'] == 0) {
             return [
                 'total_masuk' => 0,
@@ -137,14 +130,12 @@ function get_recent_cash_transactions($koneksi, $limit = null)
                 FROM cash_balance 
                 ORDER BY tanggal DESC, created_at DESC";
 
-        // Tambahkan LIMIT hanya bila diperlukan
         if ($limit !== null && $limit > 0) {
             $sql .= " LIMIT :limit";
         }
 
         $stmt = $koneksi->prepare($sql);
 
-        // Bind parameter hanya kalau LIMIT ada
         if ($limit !== null && $limit > 0) {
             $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
         }
@@ -181,7 +172,7 @@ function get_cash_transaction_by_id($koneksi, $id) {
 }
 
 /**
- * Get cash transaction detail for view (mirip get_sale_transaction)
+ * Get cash transaction detail for view
  * @param PDO $koneksi Database connection
  * @param int $id Transaction ID
  * @return array|null
@@ -210,16 +201,15 @@ function get_cash_transaction_detail($koneksi, $id) {
         $jumlah = (float)$cash['jumlah'];
         $saldo_setelah = $saldo_sebelum + ($cash['tipe'] == 'masuk' ? $jumlah : -$jumlah);
         
-        // Map ke format yang diharapkan di view
         return [
             'id' => $cash['id'],
             'tanggal_transaksi' => $cash['tanggal'],
             'judul' => $cash['judul'],
-            'jenis_transaksi' => $cash['tipe'], // 'masuk' atau 'keluar'
+            'jenis_transaksi' => $cash['tipe'],
             'jumlah' => $jumlah,
             'kategori' => $cash['kategori'],
             'keterangan' => $cash['keterangan'] ?? '',
-            'sumber' => '', // Tidak ada kolom ini, untuk kompatibilitas view
+            'sumber' => '',
             'bukti_file' => $cash['bukti_file'] ?? null,
             'saldo_sebelum' => $saldo_sebelum,
             'saldo_setelah' => $saldo_setelah,
@@ -297,7 +287,6 @@ function add_sale_transaction($koneksi, $data) {
     try {
         $koneksi->beginTransaction();
         
-        // Get investment data dengan agregasi keuntungan/kerugian
         $sql_inv = "SELECT 
                         i.jumlah as modal,
                         COALESCE(SUM(ku.jumlah_keuntungan), 0) as total_keuntungan,
@@ -316,7 +305,6 @@ function add_sale_transaction($koneksi, $data) {
             throw new Exception("Investasi tidak ditemukan");
         }
         
-        // Calculate profit/loss
         $harga_beli = (float)$inv['modal'];
         $total_keuntungan = (float)$inv['total_keuntungan'];
         $total_kerugian = (float)$inv['total_kerugian'];
@@ -325,7 +313,6 @@ function add_sale_transaction($koneksi, $data) {
         $profit_loss = $harga_jual - $harga_beli;
         $roi_persen = $harga_beli > 0 ? (($profit_loss / $harga_beli) * 100) : 0;
         
-        // Insert sale transaction
         $sql = "INSERT INTO transaksi_jual 
                 (investasi_id, tanggal_jual, harga_jual, harga_beli, 
                  total_keuntungan, total_kerugian, profit_loss, roi_persen, 
@@ -346,13 +333,11 @@ function add_sale_transaction($koneksi, $data) {
             $data['bukti_file'] ?? null
         ]);
         
-        // Get judul investasi untuk cash balance
         $sql_judul = "SELECT judul_investasi FROM investasi WHERE id = ?";
         $stmt_judul = $koneksi->prepare($sql_judul);
         $stmt_judul->execute([$data['investasi_id']]);
         $judul_inv = $stmt_judul->fetchColumn();
         
-        // Auto-create cash balance entry (kas masuk dari hasil jual)
         $sql_cash = "INSERT INTO cash_balance 
                      (tanggal, judul, tipe, jumlah, kategori, referensi_id, keterangan) 
                      VALUES (?, ?, 'masuk', ?, 'hasil_jual', ?, ?)";
@@ -366,7 +351,6 @@ function add_sale_transaction($koneksi, $data) {
             sprintf('Profit/Loss: %s | ROI: %.2f%%', format_currency($profit_loss), $roi_persen)
         ]);
         
-        // Update status investasi menjadi 'terjual'
         $sql_update = "UPDATE investasi 
                        SET status = 'terjual', tanggal_status_update = ?
                        WHERE id = ?";
@@ -444,6 +428,7 @@ function get_sale_transactions($koneksi, $limit = null)
         return [];
     }
 }
+
 /**
  * Get sale transaction by ID
  * @param PDO $koneksi Database connection
@@ -529,7 +514,7 @@ function get_sales_statistics($koneksi) {
 }
 
 /**
- * Get active investments (untuk dropdown di form jual)
+ * Get active investments
  * @param PDO $koneksi Database connection
  * @return array
  */
@@ -589,7 +574,7 @@ function get_investment_status_breakdown($koneksi) {
 }
 
 /**
- * Get monthly performance (untuk grafik)
+ * Get monthly performance
  * @param PDO $koneksi Database connection
  * @param int|null $year Year (default current year)
  * @return array
@@ -637,62 +622,10 @@ function validate_required($data, $required_fields) {
 }
 
 // ========================================
-// FLASH MESSAGE FUNCTIONS
-// ========================================
-
-/**
- * Simpan pesan flash ke session
- * @param string $type    tipe: success | error | warning | info
- * @param string $message teks pesan
- */
-function set_flash_message(string $type, string $message): void
-{
-    $_SESSION['_flash'][$type] = $message;
-}
-
-/**
- * Ambil (lalu hapus) pesan flash dari session
- * @param  string $type tipe pesan yang ingin diambil
- * @return string|null  teks pesan atau null kalau tidak ada
- */
-function get_flash_message(string $type): ?string
-{
-    if (isset($_SESSION['_flash'][$type])) {
-        $msg = $_SESSION['_flash'][$type];
-        unset($_SESSION['_flash'][$type]);
-        return $msg;
-    }
-    return null;
-}
-
-/**
- * Tampilkan pesan flash (jika ada) dalam bentuk HTML
- * @param  string $type tipe pesan
- * @return string       HTML alert atau string kosong
- */
-function flash(string $type): string
-{
-    $msg = get_flash_message($type);
-    if (!$msg) {
-        return '';
-    }
-    $icons = [
-        'success' => 'check-circle',
-        'error'   => 'exclamation-circle',
-        'warning' => 'exclamation-triangle',
-        'info'    => 'info-circle'
-    ];
-    $icon = $icons[$type] ?? 'info-circle';
-    return <<<HTML
-    <div class="alert alert-{$type}">
-        <i class="fas fa-{$icon}"></i>
-        <span>{$msg}</span>
-    </div>
-HTML;
-}
-
-// ========================================
-// NOTE: format_currency() sudah ada di koneksi.php
+// NOTE: 
+// - Flash message functions ada di koneksi.php
+// - format_currency() ada di koneksi.php
+// - File upload functions ada di koneksi.php
 // ========================================
 
 // ========================================
@@ -701,15 +634,12 @@ HTML;
 
 /**
  * Debug database queries - USE ONLY FOR DEVELOPMENT
- * Uncomment di dashboard.php untuk test: debug_queries($koneksi);
- * 
  * @param PDO $koneksi Database connection
  */
 function debug_queries($koneksi) {
     echo "<div style='background:#f5f5f5;padding:20px;margin:20px;border:2px solid #333;'>";
     echo "<h2>🔍 Debug Information</h2>";
     
-    // Test cash balance
     echo "<h3>Cash Transactions:</h3>";
     $cash = get_recent_cash_transactions($koneksi, 6);
     echo "<p><strong>Records found:</strong> " . count($cash) . "</p>";
@@ -721,7 +651,6 @@ function debug_queries($koneksi) {
         echo "<p style='color:red;'>❌ No cash transactions found!</p>";
     }
     
-    // Test sales
     echo "<h3>Sales Transactions:</h3>";
     $sales = get_sale_transactions($koneksi, 6);
     echo "<p><strong>Records found:</strong> " . count($sales) . "</p>";
@@ -733,7 +662,6 @@ function debug_queries($koneksi) {
         echo "<p style='color:red;'>❌ No sales transactions found!</p>";
     }
     
-    // Test cash by category
     echo "<h3>Cash by Category:</h3>";
     $cash_cat = get_cash_by_category($koneksi);
     echo "<p><strong>Categories found:</strong> " . count($cash_cat) . "</p>";
@@ -751,7 +679,6 @@ function debug_queries($koneksi) {
         echo "</table>";
     }
     
-    // Test sales statistics
     echo "<h3>Sales Statistics:</h3>";
     $stats = get_sales_statistics($koneksi);
     echo "<pre style='background:#fff;padding:10px;overflow:auto;'>";
@@ -759,11 +686,10 @@ function debug_queries($koneksi) {
     echo "</pre>";
     
     echo "</div>";
-    die("Debug complete - Comment out debug_queries()
-    call to continue");
+    die("Debug complete");
 }
 
 // ========================================
-// EOF - SAZEN v3.0.1 Functions Fixed
+// EOF - SAZEN v3.0.2 Functions (No Flash Duplicates)
 // ========================================
 ?>

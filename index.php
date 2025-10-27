@@ -128,7 +128,7 @@ $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugi
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
     <meta name="description" content="Portofolio Investasi Pribadi - Muhammad Burhanudin Syaifullah Azmi">
     <meta name="author" content="SAAZ">
     <title>Portofolio Investasi - Shoutaverse Capital Group v3.0</title>

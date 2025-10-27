@@ -137,13 +137,14 @@ if (!function_exists('sanitize_input')) {
 }
 
 /**
- * Parse currency input correctly - SUPER FIXED VERSION
- * Handles formats: 1500000, 1.500.000, 1,500,000, 0.82, 0,82
+ * Parse currency input correctly - SUPER FIXED VERSION v2
+ * Handles formats: 1500000, 1.500.000, 1,500,000, 0.82, 0,82, 4
  * 
  * FIXED ISSUES:
  * - ✅ Deteksi desimal kecil seperti 0,82 atau 0.82
  * - ✅ Handle edge cases dengan array bounds checking
  * - ✅ Validasi parts sebelum mengakses index
+ * - ✅ FIX: 0.82 tidak salah dianggap sebagai Rp 82
  */
 function parse_currency_fixed($value) {
     if (empty($value)) return 0;
@@ -190,14 +191,19 @@ function parse_currency_fixed($value) {
                 $decimalPart = $parts[1];
                 $integerPart = $parts[0];
                 
+                // CRITICAL FIX: Check if integer part is 0
+                if ($integerPart == '0') {
+                    // Format: 0.82 = desimal, BUKAN ribuan!
+                    // Keep as is
+                }
                 // Check decimal length
-                if (strlen($decimalPart) <= 2) {
-                    // Likely decimal: 1500.50 or 0.82
+                else if (strlen($decimalPart) <= 2) {
+                    // Likely decimal: 1500.50
                     // Keep as is
                 } else if (strlen($decimalPart) === 3) {
                     // Ambiguous: could be 1.500 (thousand) or 1.500 (???)
-                    // Default: treat as thousand separator if integer part > 0
-                    if ($integerPart > 0 && strlen($integerPart) <= 2) {
+                    // Default: treat as thousand separator if integer part <= 2 digits
+                    if (strlen($integerPart) <= 2) {
                         $value = str_replace('.', '', $value);
                     }
                 } else {
@@ -221,14 +227,19 @@ function parse_currency_fixed($value) {
                 $decimalPart = $parts[1];
                 $integerPart = $parts[0];
                 
+                // CRITICAL FIX: Check if integer part is 0
+                if ($integerPart == '0') {
+                    // Format: 0,82 = desimal, BUKAN ribuan!
+                    $value = str_replace(',', '.', $value);
+                }
                 // Check decimal length
-                if (strlen($decimalPart) <= 2) {
-                    // Likely decimal: 1500,50 or 0,82
+                else if (strlen($decimalPart) <= 2) {
+                    // Likely decimal: 1500,50
                     $value = str_replace(',', '.', $value);
                 } else if (strlen($decimalPart) === 3) {
                     // Ambiguous: could be 1,500 (thousand) or ???
-                    // Default: treat as thousand separator if integer part > 0
-                    if ($integerPart > 0 && strlen($integerPart) <= 2) {
+                    // Default: treat as thousand separator if integer part <= 2 digits
+                    if (strlen($integerPart) <= 2) {
                         $value = str_replace(',', '', $value);
                     } else {
                         // Treat as decimal with 3 digits (rare but valid)
@@ -252,13 +263,15 @@ function parse_currency_fixed($value) {
     
     // Debug log untuk troubleshooting
     error_log(sprintf(
-        "parse_currency_fixed: '%s' → %.2f",
-        $value,
+        "parse_currency_fixed: INPUT='%s' → OUTPUT=%.2f",
+        $_POST['jumlah_keuntungan'] ?? $value,
         $result
     ));
     
     return $result;
 }
+
+
 // Format currency for display
 function format_currency($value) {
     return 'Rp ' . number_format($value, 2, ',', '.');

@@ -7,6 +7,7 @@
 
 session_start();
 require_once "../config/koneksi.php";
+require_once "../config/functions.php";
 
 // Authentication Check
 if (!isset($_SESSION['user_id'])) {

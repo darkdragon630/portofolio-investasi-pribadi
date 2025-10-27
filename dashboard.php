@@ -190,7 +190,7 @@ $flash = $_SESSION['_flash'] ?? null;
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
     <meta name="description" content="Dashboard Admin - SAZEN Investment Portfolio Manager Ultimate">
     <title>Dashboard Admin - SAZEN v3.0 Ultimate</title>
     

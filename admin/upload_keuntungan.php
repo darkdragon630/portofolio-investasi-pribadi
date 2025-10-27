@@ -2,7 +2,7 @@
 /**
  * SAZEN Investment Portfolio Manager v3.0
  * Upload Keuntungan - Database Storage
- * FIXED: Currency parsing issue
+ * FINAL FIXED: Menggunakan fungsi dari koneksi.php
  */
 
 session_start();
@@ -12,26 +12,6 @@ require_once "../config/koneksi.php";
 if (!isset($_SESSION['user_id'])) {
     header("Location: auth.php");
     exit;
-}
-
-// Get investments for dropdown
-$sql_investasi = "
-    SELECT i.id, i.judul_investasi, i.jumlah, k.nama_kategori, i.kategori_id 
-    FROM investasi i 
-    JOIN kategori k ON i.kategori_id = k.id 
-    ORDER BY i.judul_investasi
-";
-$stmt_investasi = $koneksi->query($sql_investasi);
-$investasi_list = $stmt_investasi->fetchAll();
-
-// Initialize variables
-$error = '';
-$success = '';
-
-// Get flash message
-$flash = get_flash_message();
-if ($flash) {
-    $flash['type'] == 'success' ? $success = $flash['message'] : $error = $flash['message'];
 }
 
 /**
@@ -107,10 +87,30 @@ function parse_currency_fixed($value) {
     return floatval($value);
 }
 
+// Get investments for dropdown
+$sql_investasi = "
+    SELECT i.id, i.judul_investasi, i.jumlah, k.nama_kategori, i.kategori_id 
+    FROM investasi i 
+    JOIN kategori k ON i.kategori_id = k.id 
+    ORDER BY i.judul_investasi
+";
+$stmt_investasi = $koneksi->query($sql_investasi);
+$investasi_list = $stmt_investasi->fetchAll();
+
+// Initialize variables
+$error = '';
+$success = '';
+
+// Get flash message (menggunakan fungsi dari koneksi.php)
+$flash = get_flash_message();
+if ($flash) {
+    $flash['type'] == 'success' ? $success = $flash['message'] : $error = $flash['message'];
+}
+
 // Process form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
-        // Collect form data
+        // Collect form data (menggunakan sanitize_input dari koneksi.php)
         $investasi_id = $_POST['investasi_id'] ?? '';
         $kategori_id = $_POST['kategori_id'] ?? '';
         $judul_keuntungan = sanitize_input($_POST['judul_keuntungan'] ?? '');
@@ -152,11 +152,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
         
-        // Handle file upload to DATABASE
+        // Handle file upload (menggunakan fungsi dari koneksi.php)
         $bukti_file_data = null;
         if (isset($_FILES['bukti_file']) && $_FILES['bukti_file']['error'] !== UPLOAD_ERR_NO_FILE) {
             try {
-                $bukti_file_data = file_get_contents($_FILES['bukti_file']['tmp_name']);
+                $bukti_file_data = handle_file_upload_to_db($_FILES['bukti_file']);
             } catch (Exception $e) {
                 throw new Exception("Gagal upload bukti: " . $e->getMessage());
             }

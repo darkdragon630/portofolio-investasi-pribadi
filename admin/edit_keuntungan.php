@@ -362,6 +362,18 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                                 <span>Bonus</span>
                             </div>
                         </label>
+
+                        <label class="radio-card">
+                            <input type="radio" 
+                                   name="sumber_keuntungan" 
+                                   value="imbal_hasil"
+                                   <?= $keuntungan['sumber_keuntungan'] == 'imbal_hasil' ? 'checked' : '' ?> 
+                                   required>
+                            <div class="radio-content">
+                                <i class="fas fa-coins"></i>i>
+                                <span>Imbal Hasil</span>
+                            </div>
+                        </label>
                         
                         <label class="radio-card">
                             <input type="radio" 

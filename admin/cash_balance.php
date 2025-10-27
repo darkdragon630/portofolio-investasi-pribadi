@@ -238,10 +238,10 @@ $recent_transactions = get_recent_cash_transactions($koneksi);
                                 <i class="fas fa-eye"></i>
                             </a>
                         <?php endif; ?>
-                        <a href="edit_cash.php?id=<?= $tx['id'] ?>" class="btn-icon" title="Edit">
+                        <a href="edit_cash.php?id=<?= $cash['id'] ?>" class="btn-icon" title="Edit">
                             <i class="fas fa-edit"></i>
                         </a>
-                        <a href="delete_cash.php?id=<?= $tx['id'] ?>" class="btn-icon danger" 
+                        <a href="delete_cash.php?id=<?= $cash['id'] ?>" class="btn-icon danger" 
                            title="Hapus" onclick="return confirm('Yakin hapus transaksi ini?')">
                             <i class="fas fa-trash"></i>
                         </a>

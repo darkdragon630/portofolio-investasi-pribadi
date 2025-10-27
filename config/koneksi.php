@@ -136,30 +136,129 @@ if (!function_exists('sanitize_input')) {
     }
 }
 
-// Parse currency input (support Rp 1.000,50 or 1000.50)
-function parse_currency($value) {
+/**
+ * Parse currency input correctly - SUPER FIXED VERSION
+ * Handles formats: 1500000, 1.500.000, 1,500,000, 0.82, 0,82
+ * 
+ * FIXED ISSUES:
+ * - ✅ Deteksi desimal kecil seperti 0,82 atau 0.82
+ * - ✅ Handle edge cases dengan array bounds checking
+ * - ✅ Validasi parts sebelum mengakses index
+ */
+function parse_currency_fixed($value) {
     if (empty($value)) return 0;
-
+    
+    // Remove whitespace
+    $value = trim($value);
+    
+    // Remove Rp and currency symbols
+    $value = preg_replace('/[Rp\s]/', '', $value);
+    
+    // Remove any remaining non-numeric except dots and commas
     $value = preg_replace('/[^\d\.\,]/', '', $value);
-
-    $lastComma = strrpos($value, ',');
-    $lastDot = strrpos($value, '.');
-
-    if ($lastComma === false && $lastDot === false) {
-        return (float)$value;
-    } elseif ($lastComma !== false && $lastDot !== false) {
-        if ($lastComma > $lastDot) {
-            return (float)str_replace(['.', ','], ['', '.'], $value);
+    
+    // Count dots and commas to determine format
+    $dotCount = substr_count($value, '.');
+    $commaCount = substr_count($value, ',');
+    
+    // If contains both dots and commas, determine which is decimal separator
+    if ($dotCount > 0 && $commaCount > 0) {
+        $lastDot = strrpos($value, '.');
+        $lastComma = strrpos($value, ',');
+        
+        // The last one is decimal separator
+        if ($lastDot > $lastComma) {
+            // Format: 1,500,000.50 (English)
+            $value = str_replace(',', '', $value); // Remove thousand separator
         } else {
-            return (float)str_replace(',', '', $value);
+            // Format: 1.500.000,50 (Indonesian)
+            $value = str_replace('.', '', $value); // Remove thousand separator
+            $value = str_replace(',', '.', $value); // Change decimal separator
         }
-    } elseif ($lastComma !== false) {
-        return (float)str_replace(',', '.', $value);
-    } else {
-        return (float)str_replace('.', '', $value);
     }
+    // If only dots (could be thousand separator or decimal)
+    else if ($dotCount > 0) {
+        if ($dotCount > 1) {
+            // Multiple dots = thousand separator (1.500.000)
+            $value = str_replace('.', '', $value);
+        } else {
+            // Single dot - check if it's decimal or thousand separator
+            $parts = explode('.', $value);
+            
+            // IMPORTANT: Validate parts array
+            if (count($parts) === 2 && isset($parts[1])) {
+                $decimalPart = $parts[1];
+                $integerPart = $parts[0];
+                
+                // Check decimal length
+                if (strlen($decimalPart) <= 2) {
+                    // Likely decimal: 1500.50 or 0.82
+                    // Keep as is
+                } else if (strlen($decimalPart) === 3) {
+                    // Ambiguous: could be 1.500 (thousand) or 1.500 (???)
+                    // Default: treat as thousand separator if integer part > 0
+                    if ($integerPart > 0 && strlen($integerPart) <= 2) {
+                        $value = str_replace('.', '', $value);
+                    }
+                } else {
+                    // Long decimal part = thousand separator: 1.500000
+                    $value = str_replace('.', '', $value);
+                }
+            }
+        }
+    }
+    // If only commas (could be thousand separator or decimal)
+    else if ($commaCount > 0) {
+        if ($commaCount > 1) {
+            // Multiple commas = thousand separator (1,500,000)
+            $value = str_replace(',', '', $value);
+        } else {
+            // Single comma - check if it's decimal or thousand separator
+            $parts = explode(',', $value);
+            
+            // IMPORTANT: Validate parts array
+            if (count($parts) === 2 && isset($parts[1])) {
+                $decimalPart = $parts[1];
+                $integerPart = $parts[0];
+                
+                // Check decimal length
+                if (strlen($decimalPart) <= 2) {
+                    // Likely decimal: 1500,50 or 0,82
+                    $value = str_replace(',', '.', $value);
+                } else if (strlen($decimalPart) === 3) {
+                    // Ambiguous: could be 1,500 (thousand) or ???
+                    // Default: treat as thousand separator if integer part > 0
+                    if ($integerPart > 0 && strlen($integerPart) <= 2) {
+                        $value = str_replace(',', '', $value);
+                    } else {
+                        // Treat as decimal with 3 digits (rare but valid)
+                        $value = str_replace(',', '.', $value);
+                    }
+                } else {
+                    // Long decimal part = thousand separator: 1,500000
+                    $value = str_replace(',', '', $value);
+                }
+            } else {
+                // Invalid format, just remove comma
+                $value = str_replace(',', '', $value);
+            }
+        }
+    }
+    // No separator - plain number (4, 1500000)
+    // Keep as is
+    
+    // Final conversion to float
+    $result = floatval($value);
+    
+    // Debug log untuk troubleshooting
+    error_log(sprintf(
+        "parse_currency_fixed: '%s' → %.2f",
+        $value,
+        $result
+    ));
+    
+    return $result;
 }
-
 // Format currency for display
 function format_currency($value) {
     return 'Rp ' . number_format($value, 2, ',', '.');

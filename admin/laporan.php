@@ -1339,9 +1339,9 @@ $cash_by_category = get_cash_by_category($koneksi);
 
         // Export to Excel (Simple CSV)
         function exportToExcel() {
-            const filename = 'Laporan_SAZEN_<?= date('Y-m-d') ?>.csv';
+            const filename = 'Laporan_LUMINARK_HOLDINGS_<?= date('Y-m-d') ?>.csv';
             
-            let csv = 'Laporan Investasi SAZEN\n';
+            let csv = 'Laporan Investasi LUMINARK HOLDINGS\n';
             csv += 'Periode: <?= date('d/m/Y', strtotime($start_date)) ?> - <?= date('d/m/Y', strtotime($end_date)) ?>\n\n';
             
             csv += 'RINGKASAN\n';
@@ -1390,7 +1390,7 @@ $cash_by_category = get_cash_by_category($koneksi);
             });
         });
 
-        console.log('%c SAZEN Laporan & Analisis v3.0 - FIXED ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
+        console.log('%c LUMINARK HOLDINGS Laporan & Analisis v3.0 - FIXED ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
         
         // Debug: Log responsive breakpoints
         window.addEventListener('resize', function() {

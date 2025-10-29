@@ -47,8 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($tanggal_jual)) {
         $errors[] = "Tanggal jual harus diisi";
     }
-    if ($harga_jual <= 0) {
-        $errors[] = "Harga jual harus lebih dari 0";
+    if ($harga_jual < 0) {
+        $errors[] = "Harga jual tidak boleh negatif";
     }
     
     // Handle file upload (menggunakan fungsi dari koneksi.php - JSON based)
@@ -294,9 +294,9 @@ document.getElementById('saleForm').addEventListener('submit', function(e) {
         return false;
     }
     
-    if (!hargaJual || parseFloat(hargaJual.replace(/\./g, '')) <= 0) {
+    if (!hargaJual || parseFloat(hargaJual.replace(/\./g, '')) < 0) {
         e.preventDefault();
-        alert('Harga jual harus diisi dan lebih dari 0');
+        alert('Harga jual tidak boleh negatif');
         return false;
     }
     

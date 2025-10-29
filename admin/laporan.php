@@ -1155,7 +1155,7 @@ $cash_by_category = get_cash_by_category($koneksi);
         </div>
     </main>
 
-    <!-- Scripts -->
+   <!-- Scripts -->
    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         // Loading Screen
@@ -1384,162 +1384,119 @@ $cash_by_category = get_cash_by_category($koneksi);
             const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
             
             if (isMobile) {
-                // Mobile: Auto-download PDF dengan nama file otomatis
-                printToPDF();
+                // Mobile: Show instructions then trigger print
+                showMobilePrintInstructions();
             } else {
                 // Desktop: Dialog print biasa (user bisa pilih nama file)
                 window.print();
             }
         }
 
-        // Function untuk convert ke PDF dan download otomatis (mobile)
-        function printToPDF() {
-            // Generate filename dengan tanggal hari ini
+        // Show instructions for mobile users
+        function showMobilePrintInstructions() {
+            const modal = document.createElement('div');
+            modal.id = 'mobilePrintModal';
+            modal.innerHTML = `
+                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 20px; animation: fadeIn 0.3s ease;">
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 20px; max-width: 400px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
+                        <div style="text-align: center; margin-bottom: 25px;">
+                            <div style="width: 60px; height: 60px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px;">
+                                <i class="fas fa-file-pdf" style="font-size: 28px; color: white;"></i>
+                            </div>
+                            <h3 style="color: white; margin: 0 0 10px 0; font-size: 22px; font-weight: 700;">Cetak sebagai PDF</h3>
+                            <p style="color: rgba(255,255,255,0.9); margin: 0; font-size: 14px; line-height: 1.5;">Ikuti langkah berikut untuk menyimpan laporan</p>
+                        </div>
+                        
+                        <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                            <div style="display: flex; align-items: start; margin-bottom: 15px;">
+                                <div style="width: 28px; height: 28px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0;">
+                                    <span style="color: #667eea; font-weight: 700; font-size: 14px;">1</span>
+                                </div>
+                                <p style="color: white; margin: 0; font-size: 14px; line-height: 1.6;">Klik tombol <strong>"Lanjutkan"</strong> di bawah</p>
+                            </div>
+                            <div style="display: flex; align-items: start; margin-bottom: 15px;">
+                                <div style="width: 28px; height: 28px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0;">
+                                    <span style="color: #667eea; font-weight: 700; font-size: 14px;">2</span>
+                                </div>
+                                <p style="color: white; margin: 0; font-size: 14px; line-height: 1.6;">Pilih <strong>"Save as PDF"</strong> atau <strong>"Simpan sebagai PDF"</strong></p>
+                            </div>
+                            <div style="display: flex; align-items: start;">
+                                <div style="width: 28px; height: 28px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0;">
+                                    <span style="color: #667eea; font-weight: 700; font-size: 14px;">3</span>
+                                </div>
+                                <p style="color: white; margin: 0; font-size: 14px; line-height: 1.6;">Nama file: <strong>Laporan_LUMINARK_HOLDINGS_${getTodayDate()}</strong></p>
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="closeMobilePrintModal()" style="flex: 1; padding: 14px; background: rgba(255,255,255,0.2); border: none; border-radius: 10px; color: white; font-weight: 600; font-size: 15px; cursor: pointer;">
+                                Batal
+                            </button>
+                            <button onclick="proceedToPrint()" style="flex: 2; padding: 14px; background: white; border: none; border-radius: 10px; color: #667eea; font-weight: 700; font-size: 15px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                                <i class="fas fa-arrow-right" style="margin-left: 8px;"></i> Lanjutkan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <style>
+                    @keyframes fadeIn {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                    }
+                </style>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function getTodayDate() {
             const today = new Date();
             const year = today.getFullYear();
             const month = String(today.getMonth() + 1).padStart(2, '0');
             const day = String(today.getDate()).padStart(2, '0');
-            const dateStr = `${year}-${month}-${day}`; // Format: YYYY-MM-DD
-            const filename = `Laporan_LUMINARK_HOLDINGS_${dateStr}`;
-            
-            // Tampilkan loading indicator
-            const loadingDiv = document.createElement('div');
-            loadingDiv.id = 'printLoadingOverlay';
-            loadingDiv.innerHTML = `
-                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 99999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
-                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 35px 45px; border-radius: 16px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); max-width: 90%; animation: fadeInScale 0.3s ease;">
-                        <div style="width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; margin: 0 auto 20px; animation: spin 0.8s linear infinite;"></div>
-                        <p style="color: white; font-weight: 700; font-size: 18px; margin: 0 0 8px 0; font-family: 'Inter', sans-serif;">Membuat PDF...</p>
-                        <p style="color: rgba(255,255,255,0.85); font-size: 14px; margin: 0; font-family: 'Inter', sans-serif;">File akan otomatis terunduh</p>
-                    </div>
-                </div>
-                <style>
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
+            return `${year}-${month}-${day}`;
+        }
+
+        function closeMobilePrintModal() {
+            const modal = document.getElementById('mobilePrintModal');
+            if (modal) {
+                modal.style.animation = 'fadeOut 0.3s ease';
+                setTimeout(() => {
+                    if (modal.parentNode) {
+                        document.body.removeChild(modal);
                     }
-                    @keyframes fadeInScale {
-                        0% { opacity: 0; transform: scale(0.9); }
-                        100% { opacity: 1; transform: scale(1); }
-                    }
-                </style>
-            `;
-            document.body.appendChild(loadingDiv);
+                }, 300);
+            }
+        }
+
+        function proceedToPrint() {
+            closeMobilePrintModal();
             
-            // Sembunyikan elemen yang tidak perlu di print
+            // Generate filename
+            const filename = `Laporan_LUMINARK_HOLDINGS_${getTodayDate()}`;
+            
+            // Sembunyikan elemen yang tidak perlu
             const hideElements = document.querySelectorAll('.sidebar, .content-header, .filter-section, .export-buttons, .data-actions, .logout-form, .notification-btn, .refresh-btn, .mobile-menu-btn');
             hideElements.forEach(el => {
                 el.dataset.originalDisplay = el.style.display;
                 el.style.display = 'none';
             });
             
-            // Tunggu sebentar agar perubahan DOM selesai
+            // Set document title as filename
+            const originalTitle = document.title;
+            document.title = filename;
+            
+            // Trigger print
             setTimeout(() => {
-                // Simpan title asli dan ganti dengan nama file
-                const originalTitle = document.title;
-                document.title = filename;
-                
-                // Tambah print styles khusus
-                const printStyle = document.createElement('style');
-                printStyle.id = 'tempPrintStyle';
-                printStyle.textContent = `
-                    @media print {
-                        @page {
-                            size: A4;
-                            margin: 15mm;
-                        }
-                        body { 
-                            margin: 0; 
-                            padding: 0;
-                            -webkit-print-color-adjust: exact;
-                            print-color-adjust: exact;
-                        }
-                        .main-content { 
-                            margin: 0 !important; 
-                            padding: 0 !important;
-                            width: 100% !important;
-                        }
-                        .container {
-                            max-width: 100% !important;
-                            padding: 0 !important;
-                        }
-                        /* Force visibility untuk stat values */
-                        .stat-value,
-                        .stat-value.highlight,
-                        .stat-value.positive,
-                        .stat-value.negative {
-                            background: none !important;
-                            -webkit-background-clip: unset !important;
-                            background-clip: unset !important;
-                            -webkit-text-fill-color: unset !important;
-                            color: #1f2937 !important;
-                            font-weight: 800 !important;
-                            visibility: visible !important;
-                            opacity: 1 !important;
-                            display: block !important;
-                        }
-                        .card,
-                        .stat-card {
-                            background: #fff !important;
-                            border: 1px solid #ccc !important;
-                            box-shadow: none !important;
-                            page-break-inside: avoid;
-                        }
-                        table {
-                            page-break-inside: auto;
-                        }
-                        tr {
-                            page-break-inside: avoid;
-                            page-break-after: auto;
-                        }
-                        /* Hide elements */
-                        .sidebar,
-                        .content-header,
-                        .filter-section,
-                        .export-buttons,
-                        .data-actions,
-                        .logout-form,
-                        .notification-btn,
-                        .refresh-btn,
-                        .mobile-menu-btn,
-                        #printLoadingOverlay {
-                            display: none !important;
-                        }
-                    }
-                `;
-                document.head.appendChild(printStyle);
-                
-                // Trigger print dialog
                 window.print();
                 
-                // Cleanup setelah print selesai/dibatalkan
+                // Restore after print
                 setTimeout(() => {
-                    // Restore title
                     document.title = originalTitle;
-                    
-                    // Remove temporary print style
-                    const tempStyle = document.getElementById('tempPrintStyle');
-                    if (tempStyle) {
-                        document.head.removeChild(tempStyle);
-                    }
-                    
-                    // Restore hidden elements
                     hideElements.forEach(el => {
                         el.style.display = el.dataset.originalDisplay || '';
                         delete el.dataset.originalDisplay;
                     });
-                    
-                    // Remove loading overlay
-                    const overlay = document.getElementById('printLoadingOverlay');
-                    if (overlay) {
-                        overlay.style.animation = 'fadeOut 0.3s ease';
-                        setTimeout(() => {
-                            if (overlay.parentNode) {
-                                document.body.removeChild(overlay);
-                            }
-                        }, 300);
-                    }
-                }, 1000);
+                }, 500);
             }, 300);
         }
 

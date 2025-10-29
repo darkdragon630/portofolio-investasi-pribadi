@@ -188,7 +188,7 @@ $cash_by_category = get_cash_by_category($koneksi);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Laporan & Analisis - SAZEN v3.0</title>
+    <title>Laporan & Analisis -LUMINARK HOLDINGS v3.0</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -878,7 +878,7 @@ $cash_by_category = get_cash_by_category($koneksi);
 
             <!-- Export Buttons -->
             <div class="export-buttons">
-                <button class="btn-primary" onclick="window.print()">
+                <button class="btn-primary" onclick="smartPrint()">
                     <i class="fas fa-print"></i> Cetak Laporan
                 </button>
                 <button class="btn-secondary" onclick="exportToExcel()">
@@ -1156,7 +1156,7 @@ $cash_by_category = get_cash_by_category($koneksi);
     </main>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         // Loading Screen
         window.addEventListener('load', () => {
@@ -1377,20 +1377,188 @@ $cash_by_category = get_cash_by_category($koneksi);
             }
         }
 
-        // Print styles
+        // ==========================================
+        // SMART PRINT - AUTO DOWNLOAD PDF FOR MOBILE
+        // ==========================================
+        function smartPrint() {
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+            
+            if (isMobile) {
+                // Mobile: Auto-download PDF dengan nama file otomatis
+                printToPDF();
+            } else {
+                // Desktop: Dialog print biasa (user bisa pilih nama file)
+                window.print();
+            }
+        }
+
+        // Function untuk convert ke PDF dan download otomatis (mobile)
+        function printToPDF() {
+            // Generate filename dengan tanggal hari ini
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`; // Format: YYYY-MM-DD
+            const filename = `Laporan_LUMINARK_HOLDINGS_${dateStr}`;
+            
+            // Tampilkan loading indicator
+            const loadingDiv = document.createElement('div');
+            loadingDiv.id = 'printLoadingOverlay';
+            loadingDiv.innerHTML = `
+                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 99999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 35px 45px; border-radius: 16px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); max-width: 90%; animation: fadeInScale 0.3s ease;">
+                        <div style="width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; margin: 0 auto 20px; animation: spin 0.8s linear infinite;"></div>
+                        <p style="color: white; font-weight: 700; font-size: 18px; margin: 0 0 8px 0; font-family: 'Inter', sans-serif;">Membuat PDF...</p>
+                        <p style="color: rgba(255,255,255,0.85); font-size: 14px; margin: 0; font-family: 'Inter', sans-serif;">File akan otomatis terunduh</p>
+                    </div>
+                </div>
+                <style>
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                    @keyframes fadeInScale {
+                        0% { opacity: 0; transform: scale(0.9); }
+                        100% { opacity: 1; transform: scale(1); }
+                    }
+                </style>
+            `;
+            document.body.appendChild(loadingDiv);
+            
+            // Sembunyikan elemen yang tidak perlu di print
+            const hideElements = document.querySelectorAll('.sidebar, .content-header, .filter-section, .export-buttons, .data-actions, .logout-form, .notification-btn, .refresh-btn, .mobile-menu-btn');
+            hideElements.forEach(el => {
+                el.dataset.originalDisplay = el.style.display;
+                el.style.display = 'none';
+            });
+            
+            // Tunggu sebentar agar perubahan DOM selesai
+            setTimeout(() => {
+                // Simpan title asli dan ganti dengan nama file
+                const originalTitle = document.title;
+                document.title = filename;
+                
+                // Tambah print styles khusus
+                const printStyle = document.createElement('style');
+                printStyle.id = 'tempPrintStyle';
+                printStyle.textContent = `
+                    @media print {
+                        @page {
+                            size: A4;
+                            margin: 15mm;
+                        }
+                        body { 
+                            margin: 0; 
+                            padding: 0;
+                            -webkit-print-color-adjust: exact;
+                            print-color-adjust: exact;
+                        }
+                        .main-content { 
+                            margin: 0 !important; 
+                            padding: 0 !important;
+                            width: 100% !important;
+                        }
+                        .container {
+                            max-width: 100% !important;
+                            padding: 0 !important;
+                        }
+                        /* Force visibility untuk stat values */
+                        .stat-value,
+                        .stat-value.highlight,
+                        .stat-value.positive,
+                        .stat-value.negative {
+                            background: none !important;
+                            -webkit-background-clip: unset !important;
+                            background-clip: unset !important;
+                            -webkit-text-fill-color: unset !important;
+                            color: #1f2937 !important;
+                            font-weight: 800 !important;
+                            visibility: visible !important;
+                            opacity: 1 !important;
+                            display: block !important;
+                        }
+                        .card,
+                        .stat-card {
+                            background: #fff !important;
+                            border: 1px solid #ccc !important;
+                            box-shadow: none !important;
+                            page-break-inside: avoid;
+                        }
+                        table {
+                            page-break-inside: auto;
+                        }
+                        tr {
+                            page-break-inside: avoid;
+                            page-break-after: auto;
+                        }
+                        /* Hide elements */
+                        .sidebar,
+                        .content-header,
+                        .filter-section,
+                        .export-buttons,
+                        .data-actions,
+                        .logout-form,
+                        .notification-btn,
+                        .refresh-btn,
+                        .mobile-menu-btn,
+                        #printLoadingOverlay {
+                            display: none !important;
+                        }
+                    }
+                `;
+                document.head.appendChild(printStyle);
+                
+                // Trigger print dialog
+                window.print();
+                
+                // Cleanup setelah print selesai/dibatalkan
+                setTimeout(() => {
+                    // Restore title
+                    document.title = originalTitle;
+                    
+                    // Remove temporary print style
+                    const tempStyle = document.getElementById('tempPrintStyle');
+                    if (tempStyle) {
+                        document.head.removeChild(tempStyle);
+                    }
+                    
+                    // Restore hidden elements
+                    hideElements.forEach(el => {
+                        el.style.display = el.dataset.originalDisplay || '';
+                        delete el.dataset.originalDisplay;
+                    });
+                    
+                    // Remove loading overlay
+                    const overlay = document.getElementById('printLoadingOverlay');
+                    if (overlay) {
+                        overlay.style.animation = 'fadeOut 0.3s ease';
+                        setTimeout(() => {
+                            if (overlay.parentNode) {
+                                document.body.removeChild(overlay);
+                            }
+                        }, 300);
+                    }
+                }, 1000);
+            }, 300);
+        }
+
+        // Print event listeners
         window.addEventListener('beforeprint', () => {
+            console.log('📄 Print started...');
             document.querySelectorAll('.sidebar, .content-header, .filter-section, .export-buttons, .data-actions').forEach(el => {
                 el.style.display = 'none';
             });
         });
 
         window.addEventListener('afterprint', () => {
+            console.log('✅ Print finished/cancelled');
             document.querySelectorAll('.sidebar, .content-header, .filter-section, .export-buttons, .data-actions').forEach(el => {
                 el.style.display = '';
             });
         });
 
-        console.log('%c LUMINARK HOLDINGS Laporan & Analisis v3.0 - FIXED ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
+        console.log('%c LUMINARK HOLDINGS Laporan & Analisis v3.0 - SMART PRINT ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
         
         // Debug: Log responsive breakpoints
         window.addEventListener('resize', function() {
@@ -1426,6 +1594,11 @@ $cash_by_category = get_cash_by_category($koneksi);
             if (grid) {
                 console.log('Grid template columns:', window.getComputedStyle(grid).gridTemplateColumns);
             }
+
+            // Device detection log
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            console.log('📱 Device:', isMobile ? 'Mobile/Tablet' : 'Desktop/Laptop');
+            console.log('📏 Screen width:', window.innerWidth + 'px');
         });
     </script>
 </body>

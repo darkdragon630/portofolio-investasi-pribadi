@@ -134,31 +134,42 @@ $persentase_kas = $total_aset > 0 ? ($saldo_kas / $total_aset * 100) : 0;
 $persentase_investasi = $total_aset > 0 ? ($total_nilai_investasi_aktif / $total_aset * 100) : 0;
 
 /* ========================================
-   QUERY KEUNTUNGAN & KERUGIAN GLOBAL
+   QUERY KEUNTUNGAN & KERUGIAN GLOBAL (FIXED)
 ======================================== */
+
+// Total Keuntungan Global (akumulatif semua)
 $sql_total_keuntungan = "SELECT COALESCE(SUM(jumlah_keuntungan), 0) as total FROM keuntungan_investasi";
 $stmt_total_keuntungan = $koneksi->query($sql_total_keuntungan);
 $total_keuntungan_global = (float)$stmt_total_keuntungan->fetch()['total'];
 
+// Total Kerugian Global (HANYA terbaru per investasi AKTIF) - FIXED
 $sql_total_kerugian_global = "
-    SELECT COALESCE(SUM(kerugian_terbaru), 0) as total
+    SELECT COALESCE(SUM(kerugian_terbaru), 0) as total_kerugian_global
     FROM (
-        SELECT investasi_id, jumlah_kerugian as kerugian_terbaru
-        FROM (
-            SELECT 
-                investasi_id, 
-                jumlah_kerugian,
-                ROW_NUMBER() OVER (PARTITION BY investasi_id ORDER BY tanggal_kerugian DESC, created_at DESC) as rn
-            FROM kerugian_investasi
-        ) ranked
-        WHERE rn = 1
-    ) latest_losses
+        SELECT 
+            i.id as investasi_id,
+            COALESCE(kr_latest.kerugian_terbaru, 0) as kerugian_terbaru
+        FROM investasi i
+        LEFT JOIN (
+            SELECT investasi_id, jumlah_kerugian as kerugian_terbaru
+            FROM (
+                SELECT 
+                    investasi_id, 
+                    jumlah_kerugian,
+                    ROW_NUMBER() OVER (PARTITION BY investasi_id ORDER BY tanggal_kerugian DESC, created_at DESC) as rn
+                FROM kerugian_investasi
+            ) ranked
+            WHERE rn = 1
+        ) kr_latest ON i.id = kr_latest.investasi_id
+        WHERE i.status = 'aktif'
+    ) investasi_kerugian
 ";
 $stmt_total_kerugian = $koneksi->query($sql_total_kerugian_global);
-$total_kerugian_global = (float)$stmt_total_kerugian->fetch()['total'];
+$total_kerugian_global = (float)$stmt_total_kerugian->fetch()['total_kerugian_global'];
 
+// PERHITUNGAN YANG KONSISTEN - FIXED
 $net_profit = $total_keuntungan_global - $total_kerugian_global;
-$roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugian_aktif) / $total_modal_aktif * 100) : 0;
+$roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_global - $total_kerugian_global) / $total_modal_aktif * 100) : 0;
 
 /* ========================================
    BREAKDOWN KATEGORI
@@ -609,6 +620,13 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                             <div class="legend-info">
                                 <span class="legend-label">Investasi</span>
                                 <span class="legend-value"><?= format_currency($total_nilai_investasi_aktif) ?></span>
+                            </div>
+                        </div>
+                        <div class="legend-item-dashboard">
+                            <div class="legend-color cash-color"></div>
+                            <div class="legend-info">
+                                <span class="legend-label">Kas</span>
+                                <span class="legend-value"><?= format_currency($saldo_kas) ?></span>
                             </div>
                         </div>
                     </div>

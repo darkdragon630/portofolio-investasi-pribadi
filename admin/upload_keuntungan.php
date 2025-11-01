@@ -1,13 +1,14 @@
 <?php
 /**
- * SAZEN Investment Portfolio Manager v3.0
- * Upload Keuntungan - Database Storage
- * FINAL FIXED: Menggunakan fungsi dari koneksi.php
+ * SAZEN Investment Portfolio Manager v3.1
+ * Upload Keuntungan - WITH AUTO CALCULATE
+ * UPDATED: Terintegrasi dengan auto_calculate_investment.php
  */
 
 session_start();
 require_once "../config/koneksi.php";
 require_once "../config/functions.php";
+require_once "../config/auto_calculate_investment.php"; // ✅ NEW: Auto-calc functions
 
 // Authentication Check
 if (!isset($_SESSION['user_id'])) {
@@ -29,7 +30,7 @@ $investasi_list = $stmt_investasi->fetchAll();
 $error = '';
 $success = '';
 
-// Get flash message (menggunakan fungsi dari koneksi.php)
+// Get flash message
 $flash = get_flash_message();
 if ($flash) {
     $flash['type'] == 'success' ? $success = $flash['message'] : $error = $flash['message'];
@@ -38,16 +39,18 @@ if ($flash) {
 // Process form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
-        // Collect form data (menggunakan sanitize_input dari koneksi.php)
+        $koneksi->beginTransaction(); // ✅ Start transaction
+        
+        // Collect form data
         $investasi_id = $_POST['investasi_id'] ?? '';
         $kategori_id = $_POST['kategori_id'] ?? '';
         $judul_keuntungan = sanitize_input($_POST['judul_keuntungan'] ?? '');
         $deskripsi = sanitize_input($_POST['deskripsi'] ?? '');
         
-        // USE parse_currency_fixed FROM koneksi.php
+        // USE FIXED PARSER
         $jumlah_keuntungan = parse_currency_fixed($_POST['jumlah_keuntungan'] ?? '0');
         
-        // Debug log (optional - remove in production)
+        // Debug log
         error_log("Original input: " . ($_POST['jumlah_keuntungan'] ?? '0'));
         error_log("Parsed value: " . $jumlah_keuntungan);
         
@@ -80,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
         
-        // Handle file upload (menggunakan fungsi dari koneksi.php)
+        // Handle file upload
         $bukti_file_data = null;
         if (isset($_FILES['bukti_file']) && $_FILES['bukti_file']['error'] !== UPLOAD_ERR_NO_FILE) {
             try {
@@ -102,8 +105,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $jumlah_keuntungan, $persentase_keuntungan, $tanggal_keuntungan,
             $sumber_keuntungan, $status, $bukti_file_data
         ])) {
+            $keuntungan_id = $koneksi->lastInsertId();
+            
+            // ✅ NEW: AUTO RECALCULATE INVESTMENT
+            $calc_result = trigger_after_profit_added($koneksi, $keuntungan_id);
+            
+            if (!$calc_result['success']) {
+                throw new Exception("Gagal recalculate: " . $calc_result['error']);
+            }
+            
+            $koneksi->commit(); // ✅ Commit transaction
+            
+            // Success message with new calculated values
             $msg = "✅ Keuntungan berhasil ditambahkan!";
             if ($bukti_file_data) $msg .= " 📎 Bukti tersimpan";
+            $msg .= "\n📊 Nilai investasi diupdate otomatis: " . 
+                    format_currency($calc_result['new_value']) . 
+                    " (ROI: " . number_format($calc_result['roi'], 2) . "%)";
             
             redirect_with_message("../dashboard.php", "success", $msg);
         } else {
@@ -111,6 +129,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
         
     } catch (Exception $e) {
+        if ($koneksi->inTransaction()) {
+            $koneksi->rollBack(); // ✅ Rollback on error
+        }
         error_log("Upload Keuntungan Error: " . $e->getMessage());
         $error = '❌ ' . $e->getMessage();
     }
@@ -121,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tambah Keuntungan - SAZEN v3.0</title>
+    <title>Tambah Keuntungan - SAZEN v3.1</title>
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -143,20 +164,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
                 <h1>Tambah Keuntungan</h1>
                 <p>Catat keuntungan dari investasi Anda</p>
+                <span class="version-badge">v3.1 - Auto Calculate</span>
             </div>
 
             <!-- ===== MESSAGES ===== -->
             <?php if ($error): ?>
                 <div class="alert alert-error">
                     <i class="fas fa-exclamation-circle"></i>
-                    <span><?= htmlspecialchars($error) ?></span>
+                    <span><?= nl2br(htmlspecialchars($error)) ?></span>
                 </div>
             <?php endif; ?>
 
             <?php if ($success): ?>
                 <div class="alert alert-success">
                     <i class="fas fa-check-circle"></i>
-                    <span><?= htmlspecialchars($success) ?></span>
+                    <span><?= nl2br(htmlspecialchars($success)) ?></span>
                 </div>
             <?php endif; ?>
 

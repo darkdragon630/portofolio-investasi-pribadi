@@ -69,31 +69,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             throw new Exception('Semua field wajib diisi. Jumlah kerugian harus ≥ 0.');
         }
         
-        // ✅ PERBAIKAN: Cek apakah data kerugian sudah ada dengan kriteria yang lebih spesifik
+        // ✅ HANYA BERDASARKAN investasi_id
         $existing_id = null;
         $check_sql = "SELECT id FROM kerugian_investasi 
                      WHERE investasi_id = ? 
-                     AND kategori_id = ? 
-                     AND DATE(tanggal_kerugian) = DATE(?) 
-                     AND sumber_kerugian = ? 
-                     AND judul_kerugian = ?
                      LIMIT 1";
         $check_stmt = $koneksi->prepare($check_sql);
-        $check_stmt->execute([
-            $investasi_id, 
-            $kategori_id, 
-            $tanggal_kerugian, 
-            $sumber_kerugian,
-            $judul_kerugian
-        ]);
+        $check_stmt->execute([$investasi_id]);
         $existing_data = $check_stmt->fetch();
         
         if ($existing_data) {
             $existing_id = $existing_data['id'];
-            error_log("Data existing ditemukan dengan ID: " . $existing_id);
+            error_log("✅ Data existing ditemukan dengan ID: " . $existing_id . " untuk investasi_id: " . $investasi_id);
         } else {
-            error_log("Tidak ada data existing ditemukan untuk kriteria ini");
-            error_log("Kriteria: investasi_id=$investasi_id, kategori_id=$kategori_id, tanggal=$tanggal_kerugian, sumber=$sumber_kerugian, judul=$judul_kerugian");
+            error_log("❌ Tidak ada data existing ditemukan untuk investasi_id: " . $investasi_id);
         }
         
         // Auto-calculate percentage if not provided
@@ -122,9 +111,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($existing_id) {
             // UPDATE data kerugian yang sudah ada
             $sql = "UPDATE kerugian_investasi 
-                    SET deskripsi = ?, 
+                    SET kategori_id = ?,
+                        judul_kerugian = ?,
+                        deskripsi = ?, 
                         jumlah_kerugian = ?, 
                         persentase_kerugian = ?, 
+                        tanggal_kerugian = ?,
+                        sumber_kerugian = ?,
                         status = ?, 
                         bukti_file = COALESCE(?, bukti_file),
                         updated_at = CURRENT_TIMESTAMP
@@ -132,9 +125,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             $stmt = $koneksi->prepare($sql);
             $result = $stmt->execute([
+                $kategori_id,
+                $judul_kerugian,
                 $deskripsi, 
                 $jumlah_kerugian, 
                 $persentase_kerugian, 
+                $tanggal_kerugian,
+                $sumber_kerugian,
                 $status, 
                 $bukti_file_data, 
                 $existing_id
@@ -143,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $kerugian_id = $existing_id;
             $action_type = "diupdate";
             
-            error_log("Melakukan UPDATE data kerugian ID: " . $existing_id);
+            error_log("🔄 Melakukan UPDATE data kerugian ID: " . $existing_id);
         } else {
             // INSERT data kerugian baru
             $sql = "INSERT INTO kerugian_investasi 
@@ -161,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $kerugian_id = $koneksi->lastInsertId();
             $action_type = "ditambahkan";
             
-            error_log("Melakukan INSERT data kerugian baru ID: " . $kerugian_id);
+            error_log("🆕 Melakukan INSERT data kerugian baru ID: " . $kerugian_id);
         }
         
         if ($result) {

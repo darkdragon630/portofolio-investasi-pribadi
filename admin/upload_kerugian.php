@@ -39,8 +39,6 @@ if ($flash) {
 // Process form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
-        // HAPUS baris ini: $koneksi->beginTransaction();
-        
         // Collect form data
         $investasi_id = $_POST['investasi_id'] ?? '';
         $kategori_id = $_POST['kategori_id'] ?? '';
@@ -49,6 +47,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         // USE FIXED PARSER
         $jumlah_kerugian = parse_currency_fixed($_POST['jumlah_kerugian'] ?? '0');
+        
+        // Debug log
+        error_log("Upload Kerugian - Original input: " . ($_POST['jumlah_kerugian'] ?? '0'));
+        error_log("Upload Kerugian - Parsed value: " . $jumlah_kerugian);
         
         // Parse percentage
         $persentase_input = $_POST['persentase_kerugian'] ?? '';
@@ -67,20 +69,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             throw new Exception('Semua field wajib diisi. Jumlah kerugian harus ≥ 0.');
         }
         
-        // ✅ Cek apakah data kerugian sudah ada
+        // ✅ PERBAIKAN: Cek apakah data kerugian sudah ada dengan kriteria yang lebih spesifik
         $existing_id = null;
         $check_sql = "SELECT id FROM kerugian_investasi 
                      WHERE investasi_id = ? 
                      AND kategori_id = ? 
-                     AND tanggal_kerugian = ? 
+                     AND DATE(tanggal_kerugian) = DATE(?) 
                      AND sumber_kerugian = ? 
+                     AND judul_kerugian = ?
                      LIMIT 1";
         $check_stmt = $koneksi->prepare($check_sql);
-        $check_stmt->execute([$investasi_id, $kategori_id, $tanggal_kerugian, $sumber_kerugian]);
+        $check_stmt->execute([
+            $investasi_id, 
+            $kategori_id, 
+            $tanggal_kerugian, 
+            $sumber_kerugian,
+            $judul_kerugian
+        ]);
         $existing_data = $check_stmt->fetch();
         
         if ($existing_data) {
             $existing_id = $existing_data['id'];
+            error_log("Data existing ditemukan dengan ID: " . $existing_id);
+        } else {
+            error_log("Tidak ada data existing ditemukan untuk kriteria ini");
+            error_log("Kriteria: investasi_id=$investasi_id, kategori_id=$kategori_id, tanggal=$tanggal_kerugian, sumber=$sumber_kerugian, judul=$judul_kerugian");
         }
         
         // Auto-calculate percentage if not provided
@@ -109,8 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($existing_id) {
             // UPDATE data kerugian yang sudah ada
             $sql = "UPDATE kerugian_investasi 
-                    SET judul_kerugian = ?, 
-                        deskripsi = ?, 
+                    SET deskripsi = ?, 
                         jumlah_kerugian = ?, 
                         persentase_kerugian = ?, 
                         status = ?, 
@@ -120,12 +132,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             $stmt = $koneksi->prepare($sql);
             $result = $stmt->execute([
-                $judul_kerugian, $deskripsi, $jumlah_kerugian, 
-                $persentase_kerugian, $status, $bukti_file_data, $existing_id
+                $deskripsi, 
+                $jumlah_kerugian, 
+                $persentase_kerugian, 
+                $status, 
+                $bukti_file_data, 
+                $existing_id
             ]);
             
             $kerugian_id = $existing_id;
             $action_type = "diupdate";
+            
+            error_log("Melakukan UPDATE data kerugian ID: " . $existing_id);
         } else {
             // INSERT data kerugian baru
             $sql = "INSERT INTO kerugian_investasi 
@@ -142,17 +160,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             $kerugian_id = $koneksi->lastInsertId();
             $action_type = "ditambahkan";
+            
+            error_log("Melakukan INSERT data kerugian baru ID: " . $kerugian_id);
         }
         
         if ($result) {
-            // ✅ NEW: AUTO RECALCULATE INVESTMENT
+            // ✅ AUTO RECALCULATE INVESTMENT
             $calc_result = trigger_after_loss_added($koneksi, $kerugian_id);
             
             if (!$calc_result['success']) {
                 throw new Exception("Gagal recalculate: " . $calc_result['error']);
             }
-            
-            // HAPUS baris ini: $koneksi->commit();
             
             // Success message with new calculated values
             $msg = "✅ Kerugian berhasil $action_type!";
@@ -167,11 +185,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
         
     } catch (Exception $e) {
-        // HAPUS block ini:
-        // if ($koneksi->inTransaction()) {
-        //     $koneksi->rollBack();
-        // }
-        
         error_log("Upload Kerugian Error: " . $e->getMessage());
         $error = '❌ ' . $e->getMessage();
     }

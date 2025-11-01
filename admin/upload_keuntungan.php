@@ -71,6 +71,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             throw new Exception('Semua field wajib diisi. Jumlah keuntungan harus ≥ 0.');
         }
         
+        // ✅ NEW: Cek apakah data sudah ada berdasarkan kriteria tertentu
+        $existing_id = null;
+        $check_sql = "SELECT id FROM keuntungan_investasi 
+                     WHERE investasi_id = ? 
+                     AND kategori_id = ? 
+                     AND tanggal_keuntungan = ? 
+                     AND sumber_keuntungan = ? 
+                     LIMIT 1";
+        $check_stmt = $koneksi->prepare($check_sql);
+        $check_stmt->execute([$investasi_id, $kategori_id, $tanggal_keuntungan, $sumber_keuntungan]);
+        $existing_data = $check_stmt->fetch();
+        
+        if ($existing_data) {
+            $existing_id = $existing_data['id'];
+        }
+        
         // Auto-calculate percentage if not provided
         if (is_null($persentase_keuntungan)) {
             $sql_invest = "SELECT jumlah FROM investasi WHERE id = ?";
@@ -93,20 +109,46 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
         
-        // Insert to database
-        $sql = "INSERT INTO keuntungan_investasi 
-                (investasi_id, kategori_id, judul_keuntungan, deskripsi, jumlah_keuntungan, 
-                 persentase_keuntungan, tanggal_keuntungan, sumber_keuntungan, status, bukti_file) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        
-        $stmt = $koneksi->prepare($sql);
-        if ($stmt->execute([
-            $investasi_id, $kategori_id, $judul_keuntungan, $deskripsi,
-            $jumlah_keuntungan, $persentase_keuntungan, $tanggal_keuntungan,
-            $sumber_keuntungan, $status, $bukti_file_data
-        ])) {
-            $keuntungan_id = $koneksi->lastInsertId();
+        // ✅ MODIFIED: UPDATE jika data sudah ada, INSERT jika baru
+        if ($existing_id) {
+            // UPDATE data yang sudah ada
+            $sql = "UPDATE keuntungan_investasi 
+                    SET judul_keuntungan = ?, 
+                        deskripsi = ?, 
+                        jumlah_keuntungan = ?, 
+                        persentase_keuntungan = ?, 
+                        status = ?, 
+                        bukti_file = COALESCE(?, bukti_file),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?";
             
+            $stmt = $koneksi->prepare($sql);
+            $result = $stmt->execute([
+                $judul_keuntungan, $deskripsi, $jumlah_keuntungan, 
+                $persentase_keuntungan, $status, $bukti_file_data, $existing_id
+            ]);
+            
+            $keuntungan_id = $existing_id;
+            $action_type = "diupdate";
+        } else {
+            // INSERT data baru
+            $sql = "INSERT INTO keuntungan_investasi 
+                    (investasi_id, kategori_id, judul_keuntungan, deskripsi, jumlah_keuntungan, 
+                     persentase_keuntungan, tanggal_keuntungan, sumber_keuntungan, status, bukti_file) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            
+            $stmt = $koneksi->prepare($sql);
+            $result = $stmt->execute([
+                $investasi_id, $kategori_id, $judul_keuntungan, $deskripsi,
+                $jumlah_keuntungan, $persentase_keuntungan, $tanggal_keuntungan,
+                $sumber_keuntungan, $status, $bukti_file_data
+            ]);
+            
+            $keuntungan_id = $koneksi->lastInsertId();
+            $action_type = "ditambahkan";
+        }
+        
+        if ($result) {
             // ✅ NEW: AUTO RECALCULATE INVESTMENT
             $calc_result = trigger_after_profit_added($koneksi, $keuntungan_id);
             
@@ -117,7 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $koneksi->commit(); // ✅ Commit transaction
             
             // Success message with new calculated values
-            $msg = "✅ Keuntungan berhasil ditambahkan!";
+            $msg = "✅ Keuntungan berhasil $action_type!";
             if ($bukti_file_data) $msg .= " 📎 Bukti tersimpan";
             $msg .= "\n📊 Nilai investasi diupdate otomatis: " . 
                     format_currency($calc_result['new_value']) . 
@@ -125,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             redirect_with_message("../dashboard.php", "success", $msg);
         } else {
-            throw new Exception('Gagal menyimpan data keuntungan.');
+            throw new Exception("Gagal menyimpan data keuntungan.");
         }
         
     } catch (Exception $e) {

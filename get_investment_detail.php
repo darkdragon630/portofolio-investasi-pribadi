@@ -1,7 +1,10 @@
 <?php
 /**
- * SAZEN Investment Portfolio Manager v3.0
- * AJAX Endpoint - Get Investment Detail (Database Storage)
+ * SAZEN Investment Portfolio Manager v3.1.3
+ * AJAX Endpoint - Get Investment Detail (FIXED LOGIC)
+ * 
+ * ✅ Keuntungan = Akumulatif (dijumlahkan semua)
+ * ✅ Kerugian = Hanya nilai TERBARU per investasi
  */
 
 require_once 'config/koneksi.php';
@@ -31,7 +34,7 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 $id = (int)$_GET['id'];
 
 try {
-    // Get investment detail
+    // Get investment detail with FIXED LOGIC
     $sql_investment = "
         SELECT 
             i.id,
@@ -41,9 +44,26 @@ try {
             i.tanggal_investasi,
             i.bukti_file,
             k.nama_kategori,
-            k.id as kategori_id
+            k.id as kategori_id,
+            COALESCE(ku_agg.total_keuntungan, 0) as total_keuntungan,
+            COALESCE(kr_latest.kerugian_terbaru, 0) as kerugian_terbaru
         FROM investasi i
         JOIN kategori k ON i.kategori_id = k.id
+        LEFT JOIN (
+            SELECT investasi_id, SUM(jumlah_keuntungan) AS total_keuntungan
+            FROM keuntungan_investasi GROUP BY investasi_id
+        ) ku_agg ON i.id = ku_agg.investasi_id
+        LEFT JOIN (
+            SELECT investasi_id, jumlah_kerugian as kerugian_terbaru
+            FROM (
+                SELECT 
+                    investasi_id, 
+                    jumlah_kerugian,
+                    ROW_NUMBER() OVER (PARTITION BY investasi_id ORDER BY tanggal_kerugian DESC, created_at DESC) as rn
+                FROM kerugian_investasi
+            ) ranked
+            WHERE rn = 1
+        ) kr_latest ON i.id = kr_latest.investasi_id
         WHERE i.id = ?
     ";
     
@@ -120,20 +140,13 @@ try {
     $stmt_kerugian->execute([$id]);
     $kerugian_list = $stmt_kerugian->fetchAll();
     
-    // Calculate totals
-    $total_keuntungan = 0;
-    foreach ($keuntungan_list as $k) {
-        $total_keuntungan += $k['jumlah_keuntungan'];
-    }
+    // Calculate totals (FIXED LOGIC)
+    $total_keuntungan = $investment['total_keuntungan']; // Already summed from query
+    $kerugian_terbaru = $investment['kerugian_terbaru']; // Latest loss only
     
-    $total_kerugian = 0;
-    foreach ($kerugian_list as $k) {
-        $total_kerugian += $k['jumlah_kerugian'];
-    }
-    
-    $nilai_sekarang = $investment['modal_investasi'] + $total_keuntungan - $total_kerugian;
+    $nilai_sekarang = $investment['modal_investasi'] + $total_keuntungan - $kerugian_terbaru;
     $roi_persen = $investment['modal_investasi'] > 0 
-        ? (($total_keuntungan - $total_kerugian) / $investment['modal_investasi'] * 100) 
+        ? (($total_keuntungan - $kerugian_terbaru) / $investment['modal_investasi'] * 100) 
         : 0;
     
     // Format data for response
@@ -145,8 +158,8 @@ try {
         'modal_investasi_formatted' => format_currency($investment['modal_investasi']),
         'total_keuntungan' => $total_keuntungan,
         'total_keuntungan_formatted' => format_currency($total_keuntungan),
-        'total_kerugian' => $total_kerugian,
-        'total_kerugian_formatted' => format_currency($total_kerugian),
+        'kerugian_terbaru' => $kerugian_terbaru,
+        'kerugian_terbaru_formatted' => format_currency($kerugian_terbaru),
         'nilai_sekarang' => $nilai_sekarang,
         'nilai_sekarang_formatted' => format_currency($nilai_sekarang),
         'roi_persen' => number_format($roi_persen, 2),

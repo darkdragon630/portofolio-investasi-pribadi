@@ -91,7 +91,6 @@ $sql_keuntungan = "
     JOIN investasi i ON ki.investasi_id = i.id
     JOIN kategori k ON ki.kategori_id = k.id
     ORDER BY ki.tanggal_keuntungan DESC
-    LIMIT 10
 ";
 $stmt_keuntungan = $koneksi->query($sql_keuntungan);
 $keuntungan_list = $stmt_keuntungan->fetchAll();
@@ -102,7 +101,6 @@ $sql_kerugian = "
     JOIN investasi i ON kr.investasi_id = i.id
     JOIN kategori k ON kr.kategori_id = k.id
     ORDER BY kr.tanggal_kerugian DESC
-    LIMIT 10
 ";
 $stmt_kerugian = $koneksi->query($sql_kerugian);
 $kerugian_list = $stmt_kerugian->fetchAll();

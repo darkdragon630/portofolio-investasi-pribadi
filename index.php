@@ -15,7 +15,22 @@ $cash_data = $stmt_cash->fetch();
 $saldo_kas = (float)($cash_data['saldo_kas'] ?? 0);
 
 /* ========================================
-   QUERY INVESTASI (DENGAN STATUS)
+   QUERY STATISTIK GLOBAL DARI VIEW (YANG SUDAH BENAR)
+======================================== */
+$sql_stats = "SELECT * FROM v_statistik_global";
+$stmt_stats = $koneksi->query($sql_stats);
+$global_stats = $stmt_stats->fetch();
+
+// GUNAKAN DATA DARI VIEW UNTUK KONSISTENSI
+$total_modal_aktif = $global_stats['total_investasi'] ?? 0;
+$total_keuntungan = $global_stats['total_keuntungan'] ?? 0;
+$total_kerugian = $global_stats['total_kerugian'] ?? 0; // INI YANG BENAR 166.00
+$total_nilai_investasi_aktif = $global_stats['total_nilai'] ?? 0;
+$roi_global = $global_stats['roi_global'] ?? 0;
+$total_transaksi_keuntungan = $global_stats['total_transaksi_keuntungan'] ?? 0;
+
+/* ========================================
+   QUERY INVESTASI (UNTUK CARD DAN GRID SAJA)
 ======================================== */
 $sql_investasi = "
     SELECT 
@@ -53,29 +68,8 @@ $investasi_list = $stmt_investasi->fetchAll();
 $investasi_aktif = array_filter($investasi_list, fn($inv) => ($inv['status'] ?? 'aktif') === 'aktif');
 $investasi_terjual = array_filter($investasi_list, fn($inv) => ($inv['status'] ?? 'aktif') === 'terjual');
 
-// Hitung statistik untuk investasi aktif
-$total_modal_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['modal_investasi'], 0);
-$total_keuntungan_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['total_keuntungan'], 0);
-$total_kerugian_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['total_kerugian'], 0);
-$total_nilai_investasi_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['nilai_sekarang'], 0);
-
-// Hitung breakdown per kategori
-$breakdown_kategori = [];
-foreach ($investasi_aktif as $inv) {
-    $kategori = $inv['nama_kategori'];
-    if (!isset($breakdown_kategori[$kategori])) {
-        $breakdown_kategori[$kategori] = [
-            'jumlah' => 0,
-            'nilai' => 0,
-            'count' => 0
-        ];
-    }
-    $breakdown_kategori[$kategori]['nilai'] += $inv['nilai_sekarang'];
-    $breakdown_kategori[$kategori]['count']++;
-}
-
-// Urutkan berdasarkan nilai terbesar
-uasort($breakdown_kategori, fn($a, $b) => $b['nilai'] - $a['nilai']);
+// Hitung jumlah portfolio aktif (untuk display saja)
+$jumlah_portfolio_aktif = count($investasi_aktif);
 
 /* ========================================
    HITUNG TOTAL ASET & ALOKASI
@@ -97,6 +91,7 @@ $sql_keuntungan = "
     JOIN investasi i ON ki.investasi_id = i.id
     JOIN kategori k ON ki.kategori_id = k.id
     ORDER BY ki.tanggal_keuntungan DESC
+    LIMIT 10
 ";
 $stmt_keuntungan = $koneksi->query($sql_keuntungan);
 $keuntungan_list = $stmt_keuntungan->fetchAll();
@@ -107,22 +102,13 @@ $sql_kerugian = "
     JOIN investasi i ON kr.investasi_id = i.id
     JOIN kategori k ON kr.kategori_id = k.id
     ORDER BY kr.tanggal_kerugian DESC
+    LIMIT 10
 ";
 $stmt_kerugian = $koneksi->query($sql_kerugian);
 $kerugian_list = $stmt_kerugian->fetchAll();
 
-// Hitung total keuntungan dan kerugian dari SEMUA investasi (untuk statistik global)
-$sql_total_keuntungan = "SELECT COALESCE(SUM(jumlah_keuntungan), 0) as total FROM keuntungan_investasi";
-$stmt_total_keuntungan = $koneksi->query($sql_total_keuntungan);
-$total_keuntungan = $stmt_total_keuntungan->fetch()['total'];
-
-$sql_total_kerugian = "SELECT COALESCE(SUM(jumlah_kerugian), 0) as total FROM kerugian_investasi";
-$stmt_total_kerugian = $koneksi->query($sql_total_kerugian);
-$total_kerugian = $stmt_total_kerugian->fetch()['total'];
-
 // Hitung metrik
 $net_profit = $total_keuntungan - $total_kerugian;
-$roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugian_aktif) / $total_modal_aktif * 100) : 0;
 ?>
 <!DOCTYPE html>
 <html lang="id">

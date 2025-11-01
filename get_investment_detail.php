@@ -74,7 +74,7 @@ try {
                 'uploaded_at' => $file_info['uploaded_at'],
                 'preview_url' => 'view_file.php?type=investasi&id=' . $investment['id'],
                 'download_url' => 'view_file.php?type=investasi&id=' . $investment['id'] . '&download=1',
-                'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png']),
+                'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                 'is_pdf' => $file_info['extension'] === 'pdf'
             ];
         }
@@ -100,7 +100,7 @@ try {
     $stmt_keuntungan->execute([$id]);
     $keuntungan_list = $stmt_keuntungan->fetchAll();
     
-    // Get all kerugian for this investment
+    // Get only LATEST kerugian for this investment
     $sql_kerugian = "
         SELECT 
             id,
@@ -114,11 +114,12 @@ try {
         FROM kerugian_investasi
         WHERE investasi_id = ?
         ORDER BY tanggal_kerugian DESC
+        LIMIT 1
     ";
     
     $stmt_kerugian = $koneksi->prepare($sql_kerugian);
     $stmt_kerugian->execute([$id]);
-    $kerugian_list = $stmt_kerugian->fetchAll();
+    $kerugian_terbaru = $stmt_kerugian->fetch();
     
     // Calculate totals
     $total_keuntungan = 0;
@@ -127,13 +128,14 @@ try {
     }
     
     $total_kerugian = 0;
-    foreach ($kerugian_list as $k) {
-        $total_kerugian += $k['jumlah_kerugian'];
+    // Only count the latest kerugian for total calculation
+    if ($kerugian_terbaru) {
+        $total_kerugian = $kerugian_terbaru['jumlah_kerugian'];
     }
     
     $nilai_sekarang = $investment['modal_investasi'] + $total_keuntungan - $total_kerugian;
     $roi_persen = $investment['modal_investasi'] > 0 
-        ? (($total_keuntungan - $total_kerugian) / $investment['modal_investasi'] * 100) 
+        ? (($nilai_sekarang - $investment['modal_investasi']) / $investment['modal_investasi'] * 100) 
         : 0;
     
     // Format data for response
@@ -142,21 +144,30 @@ try {
         'judul_investasi' => $investment['judul_investasi'],
         'deskripsi' => $investment['deskripsi'],
         'modal_investasi' => $investment['modal_investasi'],
-        'modal_investasi_formatted' => format_currency($investment['modal_investasi']),
+        'modal_investasi_formatted' => 'Rp ' . number_format($investment['modal_investasi'], 2, ',', '.'),
         'total_keuntungan' => $total_keuntungan,
-        'total_keuntungan_formatted' => format_currency($total_keuntungan),
+        'total_keuntungan_formatted' => 'Rp ' . number_format($total_keuntungan, 2, ',', '.'),
         'total_kerugian' => $total_kerugian,
-        'total_kerugian_formatted' => format_currency($total_kerugian),
+        'total_kerugian_formatted' => 'Rp ' . number_format($total_kerugian, 2, ',', '.'),
         'nilai_sekarang' => $nilai_sekarang,
-        'nilai_sekarang_formatted' => format_currency($nilai_sekarang),
-        'roi_persen' => number_format($roi_persen, 2),
+        'nilai_sekarang_formatted' => 'Rp ' . number_format($nilai_sekarang, 2, ',', '.'),
+        'roi_persen' => round($roi_persen, 2),
+        'roi_persen_formatted' => number_format($roi_persen, 2) . '%',
         'tanggal_investasi' => $investment['tanggal_investasi'],
         'tanggal_investasi_formatted' => date('d F Y', strtotime($investment['tanggal_investasi'])),
         'nama_kategori' => $investment['nama_kategori'],
+        'kategori_id' => $investment['kategori_id'],
         'has_bukti' => !empty($investment['bukti_file']),
         'bukti_data' => $bukti_data,
         'keuntungan' => [],
-        'kerugian' => []
+        'kerugian_terbaru' => null, // Hanya satu kerugian terbaru
+        'statistics' => [
+            'total_transactions' => count($keuntungan_list) + ($kerugian_terbaru ? 1 : 0),
+            'profit_count' => count($keuntungan_list),
+            'loss_count' => $kerugian_terbaru ? 1 : 0,
+            'net_profit' => $total_keuntungan - $total_kerugian,
+            'net_profit_formatted' => 'Rp ' . number_format($total_keuntungan - $total_kerugian, 2, ',', '.')
+        ]
     ];
     
     // Format keuntungan with bukti data from DATABASE
@@ -168,10 +179,13 @@ try {
                 $keuntungan_bukti = [
                     'original_name' => $file_info['original_name'],
                     'extension' => $file_info['extension'],
+                    'size' => $file_info['size'],
                     'size_formatted' => format_file_size($file_info['size']),
+                    'mime_type' => $file_info['mime_type'],
+                    'uploaded_at' => $file_info['uploaded_at'],
                     'preview_url' => 'view_file.php?type=keuntungan&id=' . $k['id'],
                     'download_url' => 'view_file.php?type=keuntungan&id=' . $k['id'] . '&download=1',
-                    'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png']),
+                    'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                     'is_pdf' => $file_info['extension'] === 'pdf'
                 ];
             }
@@ -181,8 +195,9 @@ try {
             'id' => $k['id'],
             'judul_keuntungan' => $k['judul_keuntungan'],
             'jumlah_keuntungan' => $k['jumlah_keuntungan'],
-            'jumlah_keuntungan_formatted' => format_currency($k['jumlah_keuntungan']),
+            'jumlah_keuntungan_formatted' => 'Rp ' . number_format($k['jumlah_keuntungan'], 2, ',', '.'),
             'persentase_keuntungan' => $k['persentase_keuntungan'],
+            'persentase_keuntungan_formatted' => $k['persentase_keuntungan'] ? number_format($k['persentase_keuntungan'], 2) . '%' : '-',
             'tanggal_keuntungan' => $k['tanggal_keuntungan'],
             'tanggal_keuntungan_formatted' => date('d M Y', strtotime($k['tanggal_keuntungan'])),
             'sumber_keuntungan' => $k['sumber_keuntungan'],
@@ -194,37 +209,41 @@ try {
         ];
     }
     
-    // Format kerugian with bukti data from DATABASE
-    foreach ($kerugian_list as $k) {
+    // Format hanya kerugian terbaru
+    if ($kerugian_terbaru) {
         $kerugian_bukti = null;
-        if ($k['bukti_file']) {
-            $file_info = parse_bukti_file($k['bukti_file']);
+        if ($kerugian_terbaru['bukti_file']) {
+            $file_info = parse_bukti_file($kerugian_terbaru['bukti_file']);
             if ($file_info) {
                 $kerugian_bukti = [
                     'original_name' => $file_info['original_name'],
                     'extension' => $file_info['extension'],
+                    'size' => $file_info['size'],
                     'size_formatted' => format_file_size($file_info['size']),
-                    'preview_url' => 'view_file.php?type=kerugian&id=' . $k['id'],
-                    'download_url' => 'view_file.php?type=kerugian&id=' . $k['id'] . '&download=1',
-                    'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png']),
+                    'mime_type' => $file_info['mime_type'],
+                    'uploaded_at' => $file_info['uploaded_at'],
+                    'preview_url' => 'view_file.php?type=kerugian&id=' . $kerugian_terbaru['id'],
+                    'download_url' => 'view_file.php?type=kerugian&id=' . $kerugian_terbaru['id'] . '&download=1',
+                    'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                     'is_pdf' => $file_info['extension'] === 'pdf'
                 ];
             }
         }
         
-        $response_data['kerugian'][] = [
-            'id' => $k['id'],
-            'judul_kerugian' => $k['judul_kerugian'],
-            'jumlah_kerugian' => $k['jumlah_kerugian'],
-            'jumlah_kerugian_formatted' => format_currency($k['jumlah_kerugian']),
-            'persentase_kerugian' => $k['persentase_kerugian'],
-            'tanggal_kerugian' => $k['tanggal_kerugian'],
-            'tanggal_kerugian_formatted' => date('d M Y', strtotime($k['tanggal_kerugian'])),
-            'sumber_kerugian' => $k['sumber_kerugian'],
-            'sumber_kerugian_formatted' => ucwords(str_replace('_', ' ', $k['sumber_kerugian'])),
-            'status' => $k['status'],
-            'status_formatted' => ucfirst($k['status']),
-            'has_bukti' => !empty($k['bukti_file']),
+        $response_data['kerugian_terbaru'] = [
+            'id' => $kerugian_terbaru['id'],
+            'judul_kerugian' => $kerugian_terbaru['judul_kerugian'],
+            'jumlah_kerugian' => $kerugian_terbaru['jumlah_kerugian'],
+            'jumlah_kerugian_formatted' => 'Rp ' . number_format($kerugian_terbaru['jumlah_kerugian'], 2, ',', '.'),
+            'persentase_kerugian' => $kerugian_terbaru['persentase_kerugian'],
+            'persentase_kerugian_formatted' => $kerugian_terbaru['persentase_kerugian'] ? number_format($kerugian_terbaru['persentase_kerugian'], 2) . '%' : '-',
+            'tanggal_kerugian' => $kerugian_terbaru['tanggal_kerugian'],
+            'tanggal_kerugian_formatted' => date('d M Y', strtotime($kerugian_terbaru['tanggal_kerugian'])),
+            'sumber_kerugian' => $kerugian_terbaru['sumber_kerugian'],
+            'sumber_kerugian_formatted' => ucwords(str_replace('_', ' ', $kerugian_terbaru['sumber_kerugian'])),
+            'status' => $kerugian_terbaru['status'],
+            'status_formatted' => ucfirst($kerugian_terbaru['status']),
+            'has_bukti' => !empty($kerugian_terbaru['bukti_file']),
             'bukti_data' => $kerugian_bukti
         ];
     }
@@ -249,9 +268,34 @@ try {
     ]);
 }
 
-// Helper function to format file size
+/**
+ * Helper function to parse bukti file data from database
+ */
+function parse_bukti_file($bukti_file) {
+    // Format: filename|original_name|size|mime_type|timestamp
+    $parts = explode('|', $bukti_file);
+    
+    if (count($parts) >= 5) {
+        return [
+            'filename' => $parts[0],
+            'original_name' => $parts[1],
+            'size' => (int)$parts[2],
+            'mime_type' => $parts[3],
+            'uploaded_at' => $parts[4],
+            'extension' => strtolower(pathinfo($parts[1], PATHINFO_EXTENSION))
+        ];
+    }
+    
+    return null;
+}
+
+/**
+ * Helper function to format file size
+ */
 function format_file_size($bytes) {
-    if ($bytes >= 1048576) {
+    if ($bytes >= 1073741824) {
+        return number_format($bytes / 1073741824, 2) . ' GB';
+    } elseif ($bytes >= 1048576) {
         return number_format($bytes / 1048576, 2) . ' MB';
     } elseif ($bytes >= 1024) {
         return number_format($bytes / 1024, 2) . ' KB';

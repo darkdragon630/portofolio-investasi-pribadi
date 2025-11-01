@@ -31,6 +31,7 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 $id = (int)$_GET['id'];
 
 // Debug log
+error_log("=== GET_INVESTMENT_DETAIL START ===");
 error_log("Fetching investment detail for ID: " . $id);
 
 try {
@@ -73,10 +74,12 @@ try {
     }
 
     error_log("Investment found: " . $investment['judul_investasi']);
+    error_log("Investment bukti_file: " . ($investment['bukti_file'] ? 'EXISTS' : 'NULL'));
     
     // Get bukti file data from DATABASE
     $bukti_data = null;
     if ($investment['bukti_file']) {
+        error_log("Processing investment bukti_file: " . $investment['bukti_file']);
         $file_info = parse_bukti_file($investment['bukti_file']);
         if ($file_info) {
             $bukti_data = [
@@ -91,7 +94,12 @@ try {
                 'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                 'is_pdf' => $file_info['extension'] === 'pdf'
             ];
+            error_log("Investment bukti_data created: " . json_encode($bukti_data));
+        } else {
+            error_log("Failed to parse investment bukti_file");
         }
+    } else {
+        error_log("No bukti_file for investment");
     }
     
     // Get all keuntungan for this investment
@@ -146,6 +154,9 @@ try {
     $kerugian_terbaru = $stmt_kerugian->fetch();
     
     error_log("Kerugian terbaru found: " . ($kerugian_terbaru ? 'Yes' : 'No'));
+    if ($kerugian_terbaru) {
+        error_log("Kerugian bukti_file: " . ($kerugian_terbaru['bukti_file'] ? 'EXISTS' : 'NULL'));
+    }
     
     // Calculate totals
     $total_keuntungan = 0;
@@ -200,6 +211,7 @@ try {
     foreach ($keuntungan_list as $k) {
         $keuntungan_bukti = null;
         if ($k['bukti_file']) {
+            error_log("Processing keuntungan bukti_file: " . $k['bukti_file']);
             $file_info = parse_bukti_file($k['bukti_file']);
             if ($file_info) {
                 $keuntungan_bukti = [
@@ -214,6 +226,9 @@ try {
                     'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                     'is_pdf' => $file_info['extension'] === 'pdf'
                 ];
+                error_log("Keuntungan bukti_data created for ID " . $k['id']);
+            } else {
+                error_log("Failed to parse keuntungan bukti_file for ID " . $k['id']);
             }
         }
         
@@ -239,6 +254,7 @@ try {
     if ($kerugian_terbaru) {
         $kerugian_bukti = null;
         if ($kerugian_terbaru['bukti_file']) {
+            error_log("Processing kerugian bukti_file: " . $kerugian_terbaru['bukti_file']);
             $file_info = parse_bukti_file($kerugian_terbaru['bukti_file']);
             if ($file_info) {
                 $kerugian_bukti = [
@@ -253,6 +269,9 @@ try {
                     'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                     'is_pdf' => $file_info['extension'] === 'pdf'
                 ];
+                error_log("Kerugian bukti_data created for ID " . $kerugian_terbaru['id']);
+            } else {
+                error_log("Failed to parse kerugian bukti_file for ID " . $kerugian_terbaru['id']);
             }
         }
         
@@ -275,6 +294,8 @@ try {
     }
     
     error_log("Successfully prepared response data");
+    error_log("Investment has_bukti: " . ($response_data['has_bukti'] ? 'YES' : 'NO'));
+    error_log("=== GET_INVESTMENT_DETAIL END ===");
     
     // Success response
     echo json_encode([
@@ -299,11 +320,16 @@ try {
  * Helper function to parse bukti file data from database
  */
 function parse_bukti_file($bukti_file) {
+    error_log("parse_bukti_file INPUT: " . $bukti_file);
+    
     // Format: filename|original_name|size|mime_type|timestamp
     $parts = explode('|', $bukti_file);
     
+    error_log("parse_bukti_file PARTS COUNT: " . count($parts));
+    error_log("parse_bukti_file PARTS: " . json_encode($parts));
+    
     if (count($parts) >= 5) {
-        return [
+        $result = [
             'filename' => $parts[0],
             'original_name' => $parts[1],
             'size' => (int)$parts[2],
@@ -311,8 +337,11 @@ function parse_bukti_file($bukti_file) {
             'uploaded_at' => $parts[4],
             'extension' => strtolower(pathinfo($parts[1], PATHINFO_EXTENSION))
         ];
+        error_log("parse_bukti_file SUCCESS: " . json_encode($result));
+        return $result;
     }
     
+    error_log("parse_bukti_file FAILED - Not enough parts");
     return null;
 }
 

@@ -260,7 +260,7 @@ $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugi
                         <div class="stat-content">
                             <div class="stat-label">Total Kerugian</div>
                             <div class="stat-value negative" data-value="<?= $total_kerugian ?>"><?= format_currency($total_kerugian) ?></div>
-                            <div class="stat-sublabel"><?= count($kerugian_list) ?>+ Transaksi</div>
+                            <div class="stat-sublabel">Nilai Terbaru per Investasi</div>
                         </div>
                         <div class="stat-glow"></div>
                     </div>
@@ -735,6 +735,10 @@ $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugi
             ? '<span class="status-badge realized"><i class="fas fa-check-circle"></i> Realized</span>'
             : '<span class="status-badge unrealized"><i class="fas fa-clock"></i> Unrealized</span>';
         const investProof = buktiBlock(inv.bukti_data);
+        
+        // FIX: Gunakan inv.kerugian_terbaru bukan inv.kerugian
+        const latestLoss = inv.kerugian_terbaru;
+        
         const profitRows = inv.keuntungan.map(k => `
             <div class="detail-transaction profit ${k.status === 'realized' ? 'realized' : 'unrealized'}">
                 <div class="transaction-status-header">
@@ -745,16 +749,19 @@ $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugi
                 <div style="margin-top: 8px;"><small style="color: #6b7280;">Sumber: ${k.sumber_keuntungan.replace(/_/g, ' ')}</small></div>
                 ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
             </div>`).join('');
-        const lossRows = inv.kerugian.map(k => `
-            <div class="detail-transaction loss ${k.status === 'realized' ? 'realized' : 'unrealized'}">
+        
+        // FIX: Tampilkan hanya kerugian terbaru
+        const lossRow = latestLoss ? `
+            <div class="detail-transaction loss ${latestLoss.status === 'realized' ? 'realized' : 'unrealized'}">
                 <div class="transaction-status-header">
-                    <div class="transaction-info"><strong>${k.judul_kerugian}</strong><span>${k.tanggal_kerugian_formatted}</span></div>
-                    ${statusBadge(k.status)}
+                    <div class="transaction-info"><strong>${latestLoss.judul_kerugian}</strong><span>${latestLoss.tanggal_kerugian_formatted}</span></div>
+                    ${statusBadge(latestLoss.status)}
                 </div>
-                <div class="transaction-amount negative">-${k.jumlah_kerugian_formatted}</div>
-                <div style="margin-top: 8px;"><small style="color: #6b7280;">Sumber: ${k.sumber_kerugian.replace(/_/g, ' ')}</small></div>
-                ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
-            </div>`).join('');
+                <div class="transaction-amount negative">-${latestLoss.jumlah_kerugian_formatted}</div>
+                <div style="margin-top: 8px;"><small style="color: #6b7280;">Sumber: ${latestLoss.sumber_kerugian.replace(/_/g, ' ')}</small></div>
+                ${latestLoss.bukti_data ? buktiBlock(latestLoss.bukti_data) : ''}
+            </div>` : '<p class="no-loss">Tidak ada kerugian terbaru</p>';
+        
         modalBody.innerHTML = `
             <div class="detail-container">
                 ${investProof}
@@ -779,7 +786,10 @@ $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugi
                     </div>
                     ${inv.deskripsi ? `<div class="detail-section"><h4><i class="fas fa-align-left"></i> Deskripsi</h4><p class="detail-description">${inv.deskripsi}</p></div>` : ''}
                     ${inv.keuntungan.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-up"></i> Riwayat Keuntungan (${inv.keuntungan.length})</h4><div class="detail-transactions">${profitRows}</div></div>` : ''}
-                    ${inv.kerugian.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-down"></i> Riwayat Kerugian (${inv.kerugian.length})</h4><div class="detail-transactions">${lossRows}</div></div>` : ''}
+                    <div class="detail-section">
+                        <h4><i class="fas fa-arrow-trend-down"></i> Kerugian Terbaru</h4>
+                        <div class="detail-transactions">${lossRow}</div>
+                    </div>
                 </div>
             </div>`;
     }

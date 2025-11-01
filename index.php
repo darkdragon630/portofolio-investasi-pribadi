@@ -24,7 +24,7 @@ $global_stats = $stmt_stats->fetch();
 // GUNAKAN DATA DARI VIEW UNTUK KONSISTENSI
 $total_modal_aktif = $global_stats['total_investasi'] ?? 0;
 $total_keuntungan = $global_stats['total_keuntungan'] ?? 0;
-$total_kerugian = $global_stats['total_kerugian'] ?? 0; // INI YANG BENAR 166.00
+$total_kerugian = $global_stats['total_kerugian'] ?? 0;
 $total_nilai_investasi_aktif = $global_stats['total_nilai'] ?? 0;
 $roi_global = $global_stats['roi_global'] ?? 0;
 $total_transaksi_keuntungan = $global_stats['total_transaksi_keuntungan'] ?? 0;
@@ -107,6 +107,12 @@ $kerugian_list = $stmt_kerugian->fetchAll();
 
 // Hitung metrik
 $net_profit = $total_keuntungan - $total_kerugian;
+
+// FIX: Hitung total_keuntungan_aktif untuk Profit Ratio
+$total_keuntungan_aktif = 0;
+foreach ($investasi_aktif as $inv) {
+    $total_keuntungan_aktif += $inv['total_keuntungan'];
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -691,13 +697,24 @@ $net_profit = $total_keuntungan - $total_kerugian;
         const modalBody = document.getElementById('modalBody');
         modal.classList.add('show');
         document.body.style.overflow = 'hidden';
+        
+        // Reset modal body
+        modalBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div><p>Memuat detail...</p></div>';
+        
         fetch(`get_investment_detail.php?id=${id}`)
             .then(res => res.json())
             .then(data => {
-                if (data.success) displayInvestmentDetail(data.investment);
-                else modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>${data.message}</p></div>`;
+                console.log('API Response:', data); // Debug log
+                if (data.success) {
+                    displayInvestmentDetail(data.investment);
+                } else {
+                    modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>${data.message}</p></div>`;
+                }
             })
-            .catch(() => modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>Terjadi kesalahan</p></div>`);
+            .catch(error => {
+                console.error('Fetch error:', error);
+                modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>Terjadi kesalahan saat memuat data</p></div>`;
+            });
     }
 
     function closeModal() {
@@ -707,49 +724,99 @@ $net_profit = $total_keuntungan - $total_kerugian;
     document.addEventListener('keydown', e => e.key === 'Escape' && closeModal());
 
     function displayInvestmentDetail(inv) {
+        console.log('Displaying investment:', inv); // Debug log
+        console.log('Has Keuntungan:', inv.keuntungan.length, 'items'); // Debug
+        console.log('Has Kerugian Terbaru:', inv.kerugian_terbaru ? 'YES' : 'NO'); // Debug
         const modalBody = document.getElementById('modalBody');
+        
+        // Helper function untuk render bukti file
         const buktiBlock = (data) => {
-            if (!data) return `<div class="detail-no-image"><i class="fas fa-image"></i><p>Tidak ada bukti</p></div>`;
+            console.log('Rendering bukti:', data); // Debug log
+            if (!data) {
+                return `<div class="detail-no-image"><i class="fas fa-image"></i><p>Tidak ada bukti</p></div>`;
+            }
+            
             const { preview_url, is_image, is_pdf, original_name, size_formatted } = data;
-            if (is_image) return `<div class="detail-image"><img src="${preview_url}" alt="Bukti" loading="lazy"><p class="file-meta">${original_name} • ${size_formatted}</p></div>`;
-            if (is_pdf) return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-file-pdf"></i> Lihat PDF – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
-            return `<div class="detail-document"><a href="${preview_url}" target="_blank" class="btn-download"><i class="fas fa-paperclip"></i> Unduh – ${original_name}</a><p class="file-meta">${size_formatted}</p></div>`;
+            
+            if (is_image) {
+                return `<div class="detail-image">
+                    <img src="${preview_url}" alt="Bukti" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'detail-no-image\\'><i class=\\'fas fa-exclamation-triangle\\'></i><p>Gagal memuat gambar</p></div>'">
+                    <p class="file-meta">${original_name} • ${size_formatted}</p>
+                </div>`;
+            }
+            
+            if (is_pdf) {
+                return `<div class="detail-document">
+                    <a href="${preview_url}" target="_blank" class="btn-download">
+                        <i class="fas fa-file-pdf"></i> Lihat PDF – ${original_name}
+                    </a>
+                    <p class="file-meta">${size_formatted}</p>
+                </div>`;
+            }
+            
+            return `<div class="detail-document">
+                <a href="${preview_url}" target="_blank" class="btn-download">
+                    <i class="fas fa-paperclip"></i> Unduh – ${original_name}
+                </a>
+                <p class="file-meta">${size_formatted}</p>
+            </div>`;
         };
+        
         const statusBadge = (status) => status === 'realized' 
             ? '<span class="status-badge realized"><i class="fas fa-check-circle"></i> Realized</span>'
             : '<span class="status-badge unrealized"><i class="fas fa-clock"></i> Unrealized</span>';
+        
+        // Render bukti investasi
         const investProof = buktiBlock(inv.bukti_data);
+        console.log('Investment proof HTML:', investProof); // Debug log
         
-        // FIX: Gunakan inv.kerugian_terbaru bukan inv.kerugian
-        const latestLoss = inv.kerugian_terbaru;
-        
-        const profitRows = inv.keuntungan.map(k => `
+        // Render semua keuntungan
+        const profitRows = inv.keuntungan.map(k => {
+            console.log('Processing keuntungan:', k); // Debug log
+            return `
             <div class="detail-transaction profit ${k.status === 'realized' ? 'realized' : 'unrealized'}">
                 <div class="transaction-status-header">
-                    <div class="transaction-info"><strong>${k.judul_keuntungan}</strong><span>${k.tanggal_keuntungan_formatted}</span></div>
+                    <div class="transaction-info">
+                        <strong>${k.judul_keuntungan}</strong>
+                        <span>${k.tanggal_keuntungan_formatted}</span>
+                    </div>
                     ${statusBadge(k.status)}
                 </div>
                 <div class="transaction-amount positive">+${k.jumlah_keuntungan_formatted}</div>
-                <div style="margin-top: 8px;"><small style="color: #6b7280;">Sumber: ${k.sumber_keuntungan.replace(/_/g, ' ')}</small></div>
+                <div style="margin-top: 8px;">
+                    <small style="color: #6b7280;">Sumber: ${k.sumber_keuntungan.replace(/_/g, ' ')}</small>
+                </div>
                 ${k.bukti_data ? buktiBlock(k.bukti_data) : ''}
-            </div>`).join('');
+            </div>`;
+        }).join('');
         
-        // FIX: Tampilkan hanya kerugian terbaru
+        // Render hanya kerugian terbaru
+        const latestLoss = inv.kerugian_terbaru;
+        console.log('Latest loss:', latestLoss); // Debug log
+        
         const lossRow = latestLoss ? `
             <div class="detail-transaction loss ${latestLoss.status === 'realized' ? 'realized' : 'unrealized'}">
                 <div class="transaction-status-header">
-                    <div class="transaction-info"><strong>${latestLoss.judul_kerugian}</strong><span>${latestLoss.tanggal_kerugian_formatted}</span></div>
+                    <div class="transaction-info">
+                        <strong>${latestLoss.judul_kerugian}</strong>
+                        <span>${latestLoss.tanggal_kerugian_formatted}</span>
+                    </div>
                     ${statusBadge(latestLoss.status)}
                 </div>
                 <div class="transaction-amount negative">-${latestLoss.jumlah_kerugian_formatted}</div>
-                <div style="margin-top: 8px;"><small style="color: #6b7280;">Sumber: ${latestLoss.sumber_kerugian.replace(/_/g, ' ')}</small></div>
+                <div style="margin-top: 8px;">
+                    <small style="color: #6b7280;">Sumber: ${latestLoss.sumber_kerugian.replace(/_/g, ' ')}</small>
+                </div>
                 ${latestLoss.bukti_data ? buktiBlock(latestLoss.bukti_data) : ''}
-            </div>` : '<p class="no-loss">Tidak ada kerugian terbaru</p>';
+            </div>
+        ` : '<p class="no-loss" style="text-align: center; padding: 20px; color: #6b7280;"><i class="fas fa-info-circle"></i> Tidak ada kerugian terbaru</p>';
         
-        modalBody.innerHTML = `
+        // Build HTML sections conditionally
+        let sectionsHTML = `
             <div class="detail-container">
                 ${investProof}
                 <div class="detail-info">
+                    <!-- Informasi Dasar (Always shown) -->
                     <div class="detail-section">
                         <h4><i class="fas fa-info-circle"></i> Informasi Dasar</h4>
                         <div class="detail-grid">
@@ -758,6 +825,8 @@ $net_profit = $total_keuntungan - $total_kerugian;
                             <div class="detail-item"><span class="detail-label">Tanggal</span><span class="detail-value">${inv.tanggal_investasi_formatted}</span></div>
                         </div>
                     </div>
+                    
+                    <!-- Informasi Keuangan (Always shown) -->
                     <div class="detail-section">
                         <h4><i class="fas fa-wallet"></i> Informasi Keuangan</h4>
                         <div class="detail-grid">
@@ -768,14 +837,41 @@ $net_profit = $total_keuntungan - $total_kerugian;
                             <div class="detail-item"><span class="detail-label">ROI</span><span class="detail-value ${inv.roi_persen >= 0 ? 'positive' : 'negative'}">${inv.roi_persen}%</span></div>
                         </div>
                     </div>
-                    ${inv.deskripsi ? `<div class="detail-section"><h4><i class="fas fa-align-left"></i> Deskripsi</h4><p class="detail-description">${inv.deskripsi}</p></div>` : ''}
-                    ${inv.keuntungan.length ? `<div class="detail-section"><h4><i class="fas fa-arrow-trend-up"></i> Riwayat Keuntungan (${inv.keuntungan.length})</h4><div class="detail-transactions">${profitRows}</div></div>` : ''}
+                    
+                    <!-- Deskripsi (Conditional) -->
+                    ${inv.deskripsi ? `
+                    <div class="detail-section">
+                        <h4><i class="fas fa-align-left"></i> Deskripsi</h4>
+                        <p class="detail-description">${inv.deskripsi}</p>
+                    </div>` : ''}
+                    
+                    <!-- Riwayat Keuntungan (Conditional - only if has data) -->
+                    ${inv.keuntungan.length > 0 ? `
+                    <div class="detail-section">
+                        <h4><i class="fas fa-arrow-trend-up"></i> Riwayat Keuntungan (${inv.keuntungan.length})</h4>
+                        <div class="detail-transactions">${profitRows}</div>
+                    </div>` : ''}
+                    
+                    <!-- Kerugian Terbaru (Conditional - only if has data) -->
+                    ${latestLoss ? `
                     <div class="detail-section">
                         <h4><i class="fas fa-arrow-trend-down"></i> Kerugian Terbaru</h4>
                         <div class="detail-transactions">${lossRow}</div>
-                    </div>
+                    </div>` : ''}
+                    
+                    <!-- Empty State jika tidak ada keuntungan DAN kerugian -->
+                    ${inv.keuntungan.length === 0 && !latestLoss ? `
+                    <div class="detail-section">
+                        <div class="empty-state" style="padding: 40px 20px; text-align: center; background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 2px dashed rgba(59, 130, 246, 0.2);">
+                            <i class="fas fa-chart-line" style="font-size: 48px; color: rgba(59, 130, 246, 0.3); margin-bottom: 16px;"></i>
+                            <h4 style="color: #64748b; margin-bottom: 8px; font-size: 18px;">Belum Ada Transaksi</h4>
+                            <p style="color: #94a3b8; font-size: 14px; margin: 0;">Belum ada keuntungan atau kerugian yang tercatat untuk investasi ini</p>
+                        </div>
+                    </div>` : ''}
                 </div>
             </div>`;
+        
+        modalBody.innerHTML = sectionsHTML;
     }
 
     const observer = new IntersectionObserver(entries => {

@@ -2,11 +2,16 @@
 /**
  * SAZEN Investment Portfolio Manager v3.0
  * AJAX Endpoint - Get Investment Detail (Database Storage)
+ * Fixed Version with Enhanced Debugging
  */
 
 require_once 'config/koneksi.php';
 
 header('Content-Type: application/json');
+
+// Enable error logging
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
 
 // Validate request method
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -31,8 +36,7 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 $id = (int)$_GET['id'];
 
 // Debug log
-error_log("=== GET_INVESTMENT_DETAIL START ===");
-error_log("Fetching investment detail for ID: " . $id);
+error_log("=== GET_INVESTMENT_DETAIL START (ID: $id) ===");
 
 try {
     // Check database connection
@@ -65,6 +69,7 @@ try {
     $investment = $stmt_investment->fetch();
     
     if (!$investment) {
+        error_log("Investment not found for ID: $id");
         http_response_code(404);
         echo json_encode([
             'success' => false,
@@ -73,13 +78,13 @@ try {
         exit;
     }
 
-    error_log("Investment found: " . $investment['judul_investasi']);
-    error_log("Investment bukti_file: " . ($investment['bukti_file'] ? 'EXISTS' : 'NULL'));
+    error_log("✓ Investment found: " . $investment['judul_investasi']);
+    error_log("  bukti_file raw: " . ($investment['bukti_file'] ?? 'NULL'));
     
-    // Get bukti file data from DATABASE
+    // Parse investment bukti file
     $bukti_data = null;
     if ($investment['bukti_file']) {
-        error_log("Processing investment bukti_file: " . $investment['bukti_file']);
+        error_log("→ Parsing investment bukti_file...");
         $file_info = parse_bukti_file($investment['bukti_file']);
         if ($file_info) {
             $bukti_data = [
@@ -94,12 +99,14 @@ try {
                 'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                 'is_pdf' => $file_info['extension'] === 'pdf'
             ];
-            error_log("Investment bukti_data created: " . json_encode($bukti_data));
+            error_log("  ✓ Investment bukti parsed: " . $file_info['original_name']);
+            error_log("  ✓ Is image: " . ($bukti_data['is_image'] ? 'YES' : 'NO'));
+            error_log("  ✓ Preview URL: " . $bukti_data['preview_url']);
         } else {
-            error_log("Failed to parse investment bukti_file");
+            error_log("  ✗ Failed to parse investment bukti_file");
         }
     } else {
-        error_log("No bukti_file for investment");
+        error_log("  → No bukti_file for investment");
     }
     
     // Get all keuntungan for this investment
@@ -126,7 +133,7 @@ try {
     $stmt_keuntungan->execute([$id]);
     $keuntungan_list = $stmt_keuntungan->fetchAll();
     
-    error_log("Keuntungan found: " . count($keuntungan_list));
+    error_log("✓ Keuntungan count: " . count($keuntungan_list));
     
     // Get only LATEST kerugian for this investment
     $sql_kerugian = "
@@ -153,9 +160,11 @@ try {
     $stmt_kerugian->execute([$id]);
     $kerugian_terbaru = $stmt_kerugian->fetch();
     
-    error_log("Kerugian terbaru found: " . ($kerugian_terbaru ? 'Yes' : 'No'));
     if ($kerugian_terbaru) {
-        error_log("Kerugian bukti_file: " . ($kerugian_terbaru['bukti_file'] ? 'EXISTS' : 'NULL'));
+        error_log("✓ Kerugian terbaru found: " . $kerugian_terbaru['judul_kerugian']);
+        error_log("  bukti_file raw: " . ($kerugian_terbaru['bukti_file'] ?? 'NULL'));
+    } else {
+        error_log("→ No kerugian found");
     }
     
     // Calculate totals
@@ -165,7 +174,6 @@ try {
     }
     
     $total_kerugian = 0;
-    // Only count the latest kerugian for total calculation
     if ($kerugian_terbaru) {
         $total_kerugian = $kerugian_terbaru['jumlah_kerugian'];
     }
@@ -174,6 +182,12 @@ try {
     $roi_persen = $investment['modal_investasi'] > 0 
         ? (($nilai_sekarang - $investment['modal_investasi']) / $investment['modal_investasi'] * 100) 
         : 0;
+    
+    error_log("✓ Calculations done:");
+    error_log("  Total Keuntungan: " . $total_keuntungan);
+    error_log("  Total Kerugian: " . $total_kerugian);
+    error_log("  Nilai Sekarang: " . $nilai_sekarang);
+    error_log("  ROI: " . round($roi_persen, 2) . "%");
     
     // Format data for response
     $response_data = [
@@ -207,11 +221,12 @@ try {
         ]
     ];
     
-    // Format keuntungan with bukti data from DATABASE
-    foreach ($keuntungan_list as $k) {
+    // Format keuntungan with bukti data
+    error_log("→ Processing keuntungan bukti files...");
+    foreach ($keuntungan_list as $index => $k) {
         $keuntungan_bukti = null;
         if ($k['bukti_file']) {
-            error_log("Processing keuntungan bukti_file: " . $k['bukti_file']);
+            error_log("  [" . ($index+1) . "] Parsing keuntungan bukti (ID: " . $k['id'] . ")");
             $file_info = parse_bukti_file($k['bukti_file']);
             if ($file_info) {
                 $keuntungan_bukti = [
@@ -226,9 +241,9 @@ try {
                     'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                     'is_pdf' => $file_info['extension'] === 'pdf'
                 ];
-                error_log("Keuntungan bukti_data created for ID " . $k['id']);
+                error_log("      ✓ Parsed: " . $file_info['original_name']);
             } else {
-                error_log("Failed to parse keuntungan bukti_file for ID " . $k['id']);
+                error_log("      ✗ Failed to parse");
             }
         }
         
@@ -250,11 +265,12 @@ try {
         ];
     }
     
-    // Format hanya kerugian terbaru
+    // Format kerugian terbaru
     if ($kerugian_terbaru) {
+        error_log("→ Processing kerugian terbaru bukti...");
         $kerugian_bukti = null;
         if ($kerugian_terbaru['bukti_file']) {
-            error_log("Processing kerugian bukti_file: " . $kerugian_terbaru['bukti_file']);
+            error_log("  Parsing kerugian bukti (ID: " . $kerugian_terbaru['id'] . ")");
             $file_info = parse_bukti_file($kerugian_terbaru['bukti_file']);
             if ($file_info) {
                 $kerugian_bukti = [
@@ -269,9 +285,9 @@ try {
                     'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                     'is_pdf' => $file_info['extension'] === 'pdf'
                 ];
-                error_log("Kerugian bukti_data created for ID " . $kerugian_terbaru['id']);
+                error_log("  ✓ Parsed: " . $file_info['original_name']);
             } else {
-                error_log("Failed to parse kerugian bukti_file for ID " . $kerugian_terbaru['id']);
+                error_log("  ✗ Failed to parse");
             }
         }
         
@@ -293,40 +309,47 @@ try {
         ];
     }
     
-    error_log("Successfully prepared response data");
-    error_log("Investment has_bukti: " . ($response_data['has_bukti'] ? 'YES' : 'NO'));
-    error_log("=== GET_INVESTMENT_DETAIL END ===");
+    error_log("✓ Response data prepared successfully");
+    error_log("  Investment has_bukti: " . ($response_data['has_bukti'] ? 'YES' : 'NO'));
+    error_log("  Keuntungan count: " . count($response_data['keuntungan']));
+    error_log("  Kerugian terbaru: " . ($response_data['kerugian_terbaru'] ? 'YES' : 'NO'));
+    error_log("=== GET_INVESTMENT_DETAIL END (SUCCESS) ===");
     
     // Success response
     echo json_encode([
         'success' => true,
         'investment' => $response_data
-    ]);
+    ], JSON_PRETTY_PRINT);
     
 } catch (Exception $e) {
     // Log error
-    error_log("Get Investment Detail Error: " . $e->getMessage());
-    error_log("Stack trace: " . $e->getTraceAsString());
+    error_log("✗ ERROR: " . $e->getMessage());
+    error_log("  Stack trace: " . $e->getTraceAsString());
+    error_log("=== GET_INVESTMENT_DETAIL END (ERROR) ===");
     
     // Error response
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'message' => 'Terjadi kesalahan: ' . $e->getMessage()
-    ]);
+        'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
+        'debug' => [
+            'error' => $e->getMessage(),
+            'line' => $e->getLine(),
+            'file' => $e->getFile()
+        ]
+    ], JSON_PRETTY_PRINT);
 }
 
 /**
  * Helper function to parse bukti file data from database
  */
 function parse_bukti_file($bukti_file) {
-    error_log("parse_bukti_file INPUT: " . $bukti_file);
+    error_log("    parse_bukti_file INPUT: " . $bukti_file);
     
     // Format: filename|original_name|size|mime_type|timestamp
     $parts = explode('|', $bukti_file);
     
-    error_log("parse_bukti_file PARTS COUNT: " . count($parts));
-    error_log("parse_bukti_file PARTS: " . json_encode($parts));
+    error_log("    parse_bukti_file PARTS: " . count($parts) . " parts");
     
     if (count($parts) >= 5) {
         $result = [
@@ -337,11 +360,11 @@ function parse_bukti_file($bukti_file) {
             'uploaded_at' => $parts[4],
             'extension' => strtolower(pathinfo($parts[1], PATHINFO_EXTENSION))
         ];
-        error_log("parse_bukti_file SUCCESS: " . json_encode($result));
+        error_log("    ✓ parse_bukti_file SUCCESS");
         return $result;
     }
     
-    error_log("parse_bukti_file FAILED - Not enough parts");
+    error_log("    ✗ parse_bukti_file FAILED - Not enough parts");
     return null;
 }
 

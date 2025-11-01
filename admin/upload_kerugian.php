@@ -39,7 +39,7 @@ if ($flash) {
 // Process form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
-        $koneksi->beginTransaction(); // ✅ Start transaction
+        // HAPUS baris ini: $koneksi->beginTransaction();
         
         // Collect form data
         $investasi_id = $_POST['investasi_id'] ?? '';
@@ -49,10 +49,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         // USE FIXED PARSER
         $jumlah_kerugian = parse_currency_fixed($_POST['jumlah_kerugian'] ?? '0');
-        
-        // Debug log
-        error_log("Upload Kerugian - Original input: " . ($_POST['jumlah_kerugian'] ?? '0'));
-        error_log("Upload Kerugian - Parsed value: " . $jumlah_kerugian);
         
         // Parse percentage
         $persentase_input = $_POST['persentase_kerugian'] ?? '';
@@ -71,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             throw new Exception('Semua field wajib diisi. Jumlah kerugian harus ≥ 0.');
         }
         
-        // ✅ NEW: Cek apakah data kerugian sudah ada berdasarkan kriteria tertentu
+        // ✅ Cek apakah data kerugian sudah ada
         $existing_id = null;
         $check_sql = "SELECT id FROM kerugian_investasi 
                      WHERE investasi_id = ? 
@@ -156,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 throw new Exception("Gagal recalculate: " . $calc_result['error']);
             }
             
-            $koneksi->commit(); // ✅ Commit transaction
+            // HAPUS baris ini: $koneksi->commit();
             
             // Success message with new calculated values
             $msg = "✅ Kerugian berhasil $action_type!";
@@ -171,9 +167,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
         
     } catch (Exception $e) {
-        if ($koneksi->inTransaction()) {
-            $koneksi->rollBack(); // ✅ Rollback on error
-        }
+        // HAPUS block ini:
+        // if ($koneksi->inTransaction()) {
+        //     $koneksi->rollBack();
+        // }
+        
         error_log("Upload Kerugian Error: " . $e->getMessage());
         $error = '❌ ' . $e->getMessage();
     }

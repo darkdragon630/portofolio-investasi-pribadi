@@ -952,6 +952,9 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                                             <a href="admin/edit_kerugian.php?id=<?= $loss['id'] ?>" class="btn-icon" title="Edit">
                                                 <i class="fas fa-edit"></i>
                                             </a>
+                                            <a href="admin/delete_kerugian.php?id=<?= $loss['id'] ?>" class="btn-icon danger" title="Hapus" onclick="return confirm('Yakin hapus kerugian ini?')">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
                                         </div>
                                     </div>
                                 <?php endforeach; ?>

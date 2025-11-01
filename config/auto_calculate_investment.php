@@ -350,7 +350,7 @@ function get_change_log($koneksi, $investasi_id, $limit = 50) {
  * @param string|null $bulan_tahun Month in YYYY-MM format (null = current month)
  * @return bool Success status
  */
-function update_monthly_performance($koneksi, $investasi_id = null, $bulan_tahun = null) {
+function update_investment_monthly_stats($koneksi, $investasi_id = null, $bulan_tahun = null) {
     try {
         if (!$bulan_tahun) {
             $bulan_tahun = date('Y-m');
@@ -455,7 +455,7 @@ function update_monthly_performance($koneksi, $investasi_id = null, $bulan_tahun
  * @param int $months Number of months to retrieve
  * @return array Performance stats
  */
-function get_monthly_performance($koneksi, $investasi_id, $months = 12) {
+function get_investment_monthly_stats($koneksi, $investasi_id, $months = 12) {
     try {
         $sql = "SELECT * FROM investasi_performance_stats
                 WHERE investasi_id = ?
@@ -521,7 +521,7 @@ function get_investment_performance_summary($koneksi, $investasi_id) {
         }
         
         // Monthly performance
-        $monthly = get_monthly_performance($koneksi, $investasi_id, 6);
+        $monthly = get_investment_monthly_stats($koneksi, $investasi_id, 6);
         
         return [
             'current_value' => $current,
@@ -560,7 +560,7 @@ function batch_recalculate_all_investments($koneksi) {
     $result = auto_recalculate_investment($koneksi, null);
     
     // Update monthly stats for current month
-    update_monthly_performance($koneksi);
+    update_investment_monthly_stats($koneksi);
     
     $execution_time = microtime(true) - $start_time;
     
@@ -991,6 +991,26 @@ function initialize_snapshots_for_existing_investments($koneksi) {
             'error' => $e->getMessage()
         ];
     }
+}
+
+// ========================================
+// 9. CURRENCY FORMATTING HELPER
+// ========================================
+
+/**
+ * Format currency for display
+ * 
+ * @param float $amount Amount to format
+ * @param string $currency Currency symbol
+ * @return string Formatted currency
+ */
+function format_currency($amount, $currency = 'Rp') {
+    if ($amount == 0) return $currency . ' 0';
+    
+    $formatted = number_format(abs($amount), 0, ',', '.');
+    $sign = $amount < 0 ? '-' : '';
+    
+    return $sign . $currency . ' ' . $formatted;
 }
 
 // ========================================

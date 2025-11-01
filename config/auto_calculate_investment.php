@@ -1,14 +1,14 @@
 <?php
 /**
- * SAZEN Investment Portfolio Manager v3.1.1
+ * SAZEN Investment Portfolio Manager v3.1.2
  * Auto-Calculate Investment Values & Daily Tracking
  * 
- * FIXED v3.1.1:
- * ✅ Renamed get_monthly_performance() → get_investment_monthly_stats()
- * ✅ Renamed update_monthly_performance() → update_investment_monthly_stats()
- * ✅ Fixed function collision with functions.php
+ * FIXED v3.1.2:
+ * ✅ Added $use_transaction parameter to prevent nested transactions
+ * ✅ Fixed undefined $investasi_id in trigger functions
+ * ✅ Triggers now work within parent transactions
  * 
- * @version 3.1.1
+ * @version 3.1.2
  * @author SAAZ
  */
 
@@ -18,9 +18,15 @@ require_once "koneksi.php";
 // 1. FUNGSI UTAMA: AUTO RECALCULATE
 // ========================================
 
-function auto_recalculate_investment($koneksi, $investasi_id = null) {
+/**
+ * Auto recalculate investment values
+ * @param bool $use_transaction - Set to FALSE when calling from within another transaction
+ */
+function auto_recalculate_investment($koneksi, $investasi_id = null, $use_transaction = true) {
     try {
-        $koneksi->beginTransaction();
+        if ($use_transaction) {
+            $koneksi->beginTransaction();
+        }
         
         $investments = [];
         if ($investasi_id !== null) {
@@ -99,7 +105,9 @@ function auto_recalculate_investment($koneksi, $investasi_id = null) {
             ];
         }
         
-        $koneksi->commit();
+        if ($use_transaction) {
+            $koneksi->commit();
+        }
         
         return [
             'success' => true,
@@ -115,7 +123,7 @@ function auto_recalculate_investment($koneksi, $investasi_id = null) {
         ];
         
     } catch (Exception $e) {
-        if ($koneksi->inTransaction()) {
+        if ($use_transaction && $koneksi->inTransaction()) {
             $koneksi->rollBack();
         }
         error_log("Auto Recalculate Error: " . $e->getMessage());
@@ -271,13 +279,8 @@ function get_change_log($koneksi, $investasi_id, $limit = 50) {
 
 // ========================================
 // 4. MONTHLY PERFORMANCE STATS
-// *** RENAMED TO AVOID COLLISION ***
 // ========================================
 
-/**
- * Update monthly performance statistics for investments
- * RENAMED from update_monthly_performance() to update_investment_monthly_stats()
- */
 function update_investment_monthly_stats($koneksi, $investasi_id = null, $bulan_tahun = null) {
     try {
         if (!$bulan_tahun) {
@@ -369,10 +372,6 @@ function update_investment_monthly_stats($koneksi, $investasi_id = null, $bulan_
     }
 }
 
-/**
- * Get monthly performance stats for investments
- * RENAMED from get_monthly_performance() to get_investment_monthly_stats()
- */
 function get_investment_monthly_stats($koneksi, $investasi_id, $months = 12) {
     try {
         $sql = "SELECT * FROM investasi_performance_stats
@@ -458,7 +457,6 @@ function batch_recalculate_all_investments($koneksi) {
     
     $result = auto_recalculate_investment($koneksi, null);
     
-    // Updated function call
     update_investment_monthly_stats($koneksi);
     
     $execution_time = microtime(true) - $start_time;
@@ -476,27 +474,33 @@ function batch_recalculate_all_investments($koneksi) {
 }
 
 // ========================================
-// 6. TRIGGER FUNCTIONS
+// 6. TRIGGER FUNCTIONS (FIXED v3.1.2)
 // ========================================
 
 function trigger_after_profit_added($koneksi, $keuntungan_id) {
     try {
+        // Get profit data FIRST
         $sql = "SELECT investasi_id, jumlah_keuntungan, tanggal_keuntungan
                 FROM keuntungan_investasi WHERE id = ?";
         $stmt = $koneksi->prepare($sql);
         $stmt->execute([$keuntungan_id]);
         $profit = $stmt->fetch(PDO::FETCH_ASSOC);
-        $sql_update = "UPDATE investasi SET updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-        $stmt = $koneksi->prepare($sql_update);
-        $stmt->execute([$investasi_id]);
+        
         if (!$profit) {
             throw new Exception("Profit record not found");
         }
         
+        // Now we have $investasi_id
         $investasi_id = $profit['investasi_id'];
         $jumlah = (float)$profit['jumlah_keuntungan'];
         
-        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id);
+        // Update timestamp
+        $sql_update = "UPDATE investasi SET updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        $stmt_upd = $koneksi->prepare($sql_update);
+        $stmt_upd->execute([$investasi_id]);
+        
+        // ✅ FIXED: Pass FALSE to prevent nested transaction
+        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id, false);
         
         if (!$recalc_result['success']) {
             throw new Exception("Recalculation failed: " . $recalc_result['error']);
@@ -527,23 +531,28 @@ function trigger_after_profit_added($koneksi, $keuntungan_id) {
 
 function trigger_after_loss_added($koneksi, $kerugian_id) {
     try {
+        // Get loss data FIRST
         $sql = "SELECT investasi_id, jumlah_kerugian, tanggal_kerugian
                 FROM kerugian_investasi WHERE id = ?";
         $stmt = $koneksi->prepare($sql);
         $stmt->execute([$kerugian_id]);
         $loss = $stmt->fetch(PDO::FETCH_ASSOC);
-        $sql_update = "UPDATE investasi SET updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-        $stmt = $koneksi->prepare($sql_update);
-        $stmt->execute([$investasi_id]);
         
         if (!$loss) {
             throw new Exception("Loss record not found");
         }
         
+        // Now we have $investasi_id
         $investasi_id = $loss['investasi_id'];
         $jumlah = (float)$loss['jumlah_kerugian'];
         
-        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id);
+        // Update timestamp
+        $sql_update = "UPDATE investasi SET updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        $stmt_upd = $koneksi->prepare($sql_update);
+        $stmt_upd->execute([$investasi_id]);
+        
+        // ✅ FIXED: Pass FALSE to prevent nested transaction
+        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id, false);
         
         if (!$recalc_result['success']) {
             throw new Exception("Recalculation failed: " . $recalc_result['error']);
@@ -574,7 +583,8 @@ function trigger_after_loss_added($koneksi, $kerugian_id) {
 
 function trigger_after_transaction_updated($koneksi, $investasi_id, $type = 'profit') {
     try {
-        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id);
+        // ✅ FIXED: Pass FALSE to prevent nested transaction
+        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id, false);
         
         if (!$recalc_result['success']) {
             throw new Exception("Recalculation failed: " . $recalc_result['error']);
@@ -605,7 +615,8 @@ function trigger_after_transaction_updated($koneksi, $investasi_id, $type = 'pro
 
 function trigger_after_transaction_deleted($koneksi, $investasi_id, $type, $amount) {
     try {
-        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id);
+        // ✅ FIXED: Pass FALSE to prevent nested transaction
+        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id, false);
         
         if (!$recalc_result['success']) {
             throw new Exception("Recalculation failed: " . $recalc_result['error']);
@@ -812,5 +823,5 @@ function initialize_snapshots_for_existing_investments($koneksi) {
 }
 
 // ========================================
-// EOF - Auto Calculate Investment v3.1.1
+// EOF - Auto Calculate Investment v3.1.2
 // ========================================

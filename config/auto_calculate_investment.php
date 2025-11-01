@@ -1,14 +1,17 @@
 <?php
 /**
- * SAZEN Investment Portfolio Manager v3.1.2
+ * SAZEN Investment Portfolio Manager v3.1
  * Auto-Calculate Investment Values & Daily Tracking
  * 
- * FIXED v3.1.2:
- * ✅ Added $use_transaction parameter to prevent nested transactions
- * ✅ Fixed undefined $investasi_id in trigger functions
- * ✅ Triggers now work within parent transactions
+ * FITUR BARU v3.1:
+ * ✅ Auto-update nilai investasi setiap kali ada keuntungan/kerugian baru
+ * ✅ Tracking perubahan harian (Hari 1, Hari 2, Hari 3...)
+ * ✅ Deteksi status naik/turun otomatis
+ * ✅ Log semua perubahan nilai
+ * ✅ Statistik performa bulanan
+ * ✅ Proteksi NULL dan error handling lengkap
  * 
- * @version 3.1.2
+ * @version 3.1.0
  * @author SAAZ
  */
 
@@ -19,17 +22,21 @@ require_once "koneksi.php";
 // ========================================
 
 /**
- * Auto recalculate investment values
- * @param bool $use_transaction - Set to FALSE when calling from within another transaction
+ * Recalculate investment values after profit/loss changes
+ * Called automatically after insert/update/delete keuntungan/kerugian
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int|null $investasi_id Specific investment ID (null = recalc all)
+ * @return array Result with success status and details
  */
-function auto_recalculate_investment($koneksi, $investasi_id = null, $use_transaction = true) {
+function auto_recalculate_investment($koneksi, $investasi_id = null) {
     try {
-        if ($use_transaction) {
-            $koneksi->beginTransaction();
-        }
+        $koneksi->beginTransaction();
         
+        // Determine which investments to update
         $investments = [];
         if ($investasi_id !== null) {
+            // Single investment
             $sql = "SELECT id, judul_investasi, jumlah as modal_investasi, 
                            tanggal_investasi, status
                     FROM investasi WHERE id = ?";
@@ -42,6 +49,7 @@ function auto_recalculate_investment($koneksi, $investasi_id = null, $use_transa
                 throw new Exception("Investment ID $investasi_id not found");
             }
         } else {
+            // All active investments
             $sql = "SELECT id, judul_investasi, jumlah as modal_investasi, 
                            tanggal_investasi, status
                     FROM investasi 
@@ -60,34 +68,41 @@ function auto_recalculate_investment($koneksi, $investasi_id = null, $use_transa
             $inv_id = $inv['id'];
             $modal = (float)$inv['modal_investasi'];
             
+            // Get total keuntungan
             $sql_keuntungan = "SELECT IFNULL(SUM(jumlah_keuntungan), 0) as total
                                FROM keuntungan_investasi WHERE investasi_id = ?";
             $stmt_k = $koneksi->prepare($sql_keuntungan);
             $stmt_k->execute([$inv_id]);
             $total_keuntungan = (float)$stmt_k->fetchColumn();
             
+            // Get total kerugian
             $sql_kerugian = "SELECT IFNULL(SUM(jumlah_kerugian), 0) as total
                              FROM kerugian_investasi WHERE investasi_id = ?";
             $stmt_kr = $koneksi->prepare($sql_kerugian);
             $stmt_kr->execute([$inv_id]);
             $total_kerugian = (float)$stmt_kr->fetchColumn();
             
+            // Calculate current value and ROI
             $nilai_sekarang = $modal + $total_keuntungan - $total_kerugian;
             $roi_persen = $modal > 0 ? ((($nilai_sekarang - $modal) / $modal) * 100) : 0;
             
+            // Update investasi table (for quick access without view)
             $sql_update = "UPDATE investasi 
                           SET updated_at = CURRENT_TIMESTAMP
                           WHERE id = ?";
             $stmt_upd = $koneksi->prepare($sql_update);
             $stmt_upd->execute([$inv_id]);
             
+            // Log the change
             log_investment_change($koneksi, $inv_id, 'recalculation', null, 
                                  $nilai_sekarang, $total_keuntungan - $total_kerugian,
                                  "Auto-recalculate: Modal=$modal, Profit=$total_keuntungan, Loss=$total_kerugian");
             
+            // Update daily snapshot if today's data exists
             update_daily_snapshot($koneksi, $inv_id, $nilai_sekarang, 
                                  $total_keuntungan, $total_kerugian);
             
+            // Accumulate global stats
             if ($inv['status'] === 'aktif') {
                 $global_total_keuntungan += $total_keuntungan;
                 $global_total_kerugian += $total_kerugian;
@@ -105,9 +120,7 @@ function auto_recalculate_investment($koneksi, $investasi_id = null, $use_transa
             ];
         }
         
-        if ($use_transaction) {
-            $koneksi->commit();
-        }
+        $koneksi->commit();
         
         return [
             'success' => true,
@@ -123,7 +136,7 @@ function auto_recalculate_investment($koneksi, $investasi_id = null, $use_transa
         ];
         
     } catch (Exception $e) {
-        if ($use_transaction && $koneksi->inTransaction()) {
+        if ($koneksi->inTransaction()) {
             $koneksi->rollBack();
         }
         error_log("Auto Recalculate Error: " . $e->getMessage());
@@ -138,9 +151,21 @@ function auto_recalculate_investment($koneksi, $investasi_id = null, $use_transa
 // 2. DAILY SNAPSHOT TRACKING
 // ========================================
 
+/**
+ * Create or update daily snapshot for investment
+ * Tracks day-by-day changes (Hari 1, Hari 2, Hari 3...)
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $investasi_id Investment ID
+ * @param float $nilai_akhir Current value at end of day
+ * @param float $total_keuntungan_harian Today's profit
+ * @param float $total_kerugian_harian Today's loss
+ * @return bool Success status
+ */
 function update_daily_snapshot($koneksi, $investasi_id, $nilai_akhir, 
                                $total_keuntungan_harian = 0, $total_kerugian_harian = 0) {
     try {
+        // Get investment start date
         $sql = "SELECT tanggal_investasi, jumlah FROM investasi WHERE id = ?";
         $stmt = $koneksi->prepare($sql);
         $stmt->execute([$investasi_id]);
@@ -152,10 +177,12 @@ function update_daily_snapshot($koneksi, $investasi_id, $nilai_akhir,
         $modal = (float)$inv['jumlah'];
         $today = date('Y-m-d');
         
+        // Calculate day number (Hari ke-X)
         $start = new DateTime($tanggal_investasi);
         $end = new DateTime($today);
         $hari_ke = $start->diff($end)->days + 1;
         
+        // Get yesterday's value for comparison
         $sql_yesterday = "SELECT nilai_akhir FROM investasi_snapshot_harian
                          WHERE investasi_id = ? 
                          AND tanggal_snapshot < ?
@@ -165,10 +192,12 @@ function update_daily_snapshot($koneksi, $investasi_id, $nilai_akhir,
         $yesterday = $stmt_y->fetch(PDO::FETCH_ASSOC);
         $nilai_awal = $yesterday ? (float)$yesterday['nilai_akhir'] : $modal;
         
+        // Calculate changes
         $perubahan_nilai = $nilai_akhir - $nilai_awal;
         $persentase_perubahan = $nilai_awal > 0 ? (($perubahan_nilai / $nilai_awal) * 100) : 0;
         $roi_kumulatif = $modal > 0 ? ((($nilai_akhir - $modal) / $modal) * 100) : 0;
         
+        // Determine status
         $status_perubahan = 'stabil';
         if ($perubahan_nilai > 0.01) {
             $status_perubahan = 'naik';
@@ -176,6 +205,7 @@ function update_daily_snapshot($koneksi, $investasi_id, $nilai_akhir,
             $status_perubahan = 'turun';
         }
         
+        // Insert or update snapshot
         $sql_insert = "INSERT INTO investasi_snapshot_harian 
                       (investasi_id, tanggal_snapshot, hari_ke, nilai_awal, nilai_akhir,
                        perubahan_nilai, persentase_perubahan, total_keuntungan_harian,
@@ -205,6 +235,14 @@ function update_daily_snapshot($koneksi, $investasi_id, $nilai_akhir,
     }
 }
 
+/**
+ * Get daily snapshot history for investment
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $investasi_id Investment ID
+ * @param int $limit Number of days to retrieve
+ * @return array Snapshot history
+ */
 function get_daily_snapshot_history($koneksi, $investasi_id, $limit = 30) {
     try {
         $sql = "SELECT * FROM investasi_snapshot_harian
@@ -229,9 +267,22 @@ function get_daily_snapshot_history($koneksi, $investasi_id, $limit = 30) {
 // 3. CHANGE LOGGING
 // ========================================
 
+/**
+ * Log investment value changes
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $investasi_id Investment ID
+ * @param string $tipe_perubahan Type: keuntungan|kerugian|penjualan|koreksi|recalculation
+ * @param int|null $referensi_id Reference ID from source table
+ * @param float $nilai_sesudah New value
+ * @param float $selisih Change amount
+ * @param string $keterangan Description
+ * @return bool Success status
+ */
 function log_investment_change($koneksi, $investasi_id, $tipe_perubahan, 
                                $referensi_id, $nilai_sesudah, $selisih, $keterangan = '') {
     try {
+        // Get previous value
         $sql_prev = "SELECT nilai_sesudah FROM investasi_change_log
                      WHERE investasi_id = ?
                      ORDER BY created_at DESC LIMIT 1";
@@ -240,6 +291,7 @@ function log_investment_change($koneksi, $investasi_id, $tipe_perubahan,
         $prev = $stmt_prev->fetch(PDO::FETCH_ASSOC);
         $nilai_sebelum = $prev ? (float)$prev['nilai_sesudah'] : 0;
         
+        // Insert log
         $sql = "INSERT INTO investasi_change_log 
                (investasi_id, tipe_perubahan, referensi_id, nilai_sebelum,
                 nilai_sesudah, selisih, keterangan)
@@ -257,6 +309,14 @@ function log_investment_change($koneksi, $investasi_id, $tipe_perubahan,
     }
 }
 
+/**
+ * Get change log history
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $investasi_id Investment ID
+ * @param int $limit Number of records
+ * @return array Change log
+ */
 function get_change_log($koneksi, $investasi_id, $limit = 50) {
     try {
         $sql = "SELECT * FROM investasi_change_log
@@ -281,12 +341,22 @@ function get_change_log($koneksi, $investasi_id, $limit = 50) {
 // 4. MONTHLY PERFORMANCE STATS
 // ========================================
 
-function update_investment_monthly_stats($koneksi, $investasi_id = null, $bulan_tahun = null) {
+/**
+ * Update monthly performance statistics
+ * Should be called at end of month or on-demand
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int|null $investasi_id Specific investment (null = all)
+ * @param string|null $bulan_tahun Month in YYYY-MM format (null = current month)
+ * @return bool Success status
+ */
+function update_monthly_performance($koneksi, $investasi_id = null, $bulan_tahun = null) {
     try {
         if (!$bulan_tahun) {
             $bulan_tahun = date('Y-m');
         }
         
+        // Get investments to process
         $investments = [];
         if ($investasi_id) {
             $investments[] = $investasi_id;
@@ -297,6 +367,7 @@ function update_investment_monthly_stats($koneksi, $investasi_id = null, $bulan_
         }
         
         foreach ($investments as $inv_id) {
+            // Get monthly profits
             $sql_profit = "SELECT 
                           IFNULL(SUM(jumlah_keuntungan), 0) as total,
                           COUNT(*) as jumlah
@@ -307,6 +378,7 @@ function update_investment_monthly_stats($koneksi, $investasi_id = null, $bulan_
             $stmt_p->execute([$inv_id, $bulan_tahun]);
             $profit_data = $stmt_p->fetch(PDO::FETCH_ASSOC);
             
+            // Get monthly losses
             $sql_loss = "SELECT 
                         IFNULL(SUM(jumlah_kerugian), 0) as total,
                         COUNT(*) as jumlah
@@ -321,12 +393,14 @@ function update_investment_monthly_stats($koneksi, $investasi_id = null, $bulan_
             $total_loss = (float)$loss_data['total'];
             $net_profit = $total_profit - $total_loss;
             
+            // Get investment modal for ROI calculation
             $sql_modal = "SELECT jumlah FROM investasi WHERE id = ?";
             $stmt_m = $koneksi->prepare($sql_modal);
             $stmt_m->execute([$inv_id]);
             $modal = (float)$stmt_m->fetchColumn();
             $roi_bulan = $modal > 0 ? (($net_profit / $modal) * 100) : 0;
             
+            // Get min/max values from daily snapshots
             $sql_minmax = "SELECT 
                           MAX(nilai_akhir) as nilai_tertinggi,
                           MIN(nilai_akhir) as nilai_terendah,
@@ -338,6 +412,7 @@ function update_investment_monthly_stats($koneksi, $investasi_id = null, $bulan_
             $stmt_mm->execute([$inv_id, $bulan_tahun]);
             $minmax = $stmt_mm->fetch(PDO::FETCH_ASSOC);
             
+            // Insert or update stats
             $sql_insert = "INSERT INTO investasi_performance_stats
                           (investasi_id, bulan_tahun, total_keuntungan_bulan, total_kerugian_bulan,
                            net_profit_bulan, roi_bulan, jumlah_transaksi_keuntungan,
@@ -367,12 +442,20 @@ function update_investment_monthly_stats($koneksi, $investasi_id = null, $bulan_
         return true;
         
     } catch (Exception $e) {
-        error_log("Update Investment Monthly Stats Error: " . $e->getMessage());
+        error_log("Update Monthly Performance Error: " . $e->getMessage());
         return false;
     }
 }
 
-function get_investment_monthly_stats($koneksi, $investasi_id, $months = 12) {
+/**
+ * Get monthly performance stats
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $investasi_id Investment ID
+ * @param int $months Number of months to retrieve
+ * @return array Performance stats
+ */
+function get_monthly_performance($koneksi, $investasi_id, $months = 12) {
     try {
         $sql = "SELECT * FROM investasi_performance_stats
                 WHERE investasi_id = ?
@@ -387,7 +470,7 @@ function get_investment_monthly_stats($koneksi, $investasi_id, $months = 12) {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
         
     } catch (Exception $e) {
-        error_log("Get Investment Monthly Stats Error: " . $e->getMessage());
+        error_log("Get Monthly Performance Error: " . $e->getMessage());
         return [];
     }
 }
@@ -396,8 +479,16 @@ function get_investment_monthly_stats($koneksi, $investasi_id, $months = 12) {
 // 5. HELPER FUNCTIONS
 // ========================================
 
+/**
+ * Get investment performance summary
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $investasi_id Investment ID
+ * @return array Performance summary with trends
+ */
 function get_investment_performance_summary($koneksi, $investasi_id) {
     try {
+        // Current value from view
         $sql_current = "SELECT * FROM v_investasi_summary WHERE id = ?";
         $stmt = $koneksi->prepare($sql_current);
         $stmt->execute([$investasi_id]);
@@ -407,8 +498,10 @@ function get_investment_performance_summary($koneksi, $investasi_id) {
             return null;
         }
         
+        // Last 7 days trend
         $history_7d = get_daily_snapshot_history($koneksi, $investasi_id, 7);
         
+        // Calculate 7-day trend
         $trend_7d = 'stabil';
         $change_7d = 0;
         if (count($history_7d) >= 2) {
@@ -418,6 +511,7 @@ function get_investment_performance_summary($koneksi, $investasi_id) {
             $trend_7d = $change_7d > 0 ? 'naik' : ($change_7d < 0 ? 'turun' : 'stabil');
         }
         
+        // Last 30 days stats
         $history_30d = get_daily_snapshot_history($koneksi, $investasi_id, 30);
         $naik_count = 0;
         $turun_count = 0;
@@ -426,7 +520,8 @@ function get_investment_performance_summary($koneksi, $investasi_id) {
             if ($day['status_perubahan'] === 'turun') $turun_count++;
         }
         
-        $monthly = get_investment_monthly_stats($koneksi, $investasi_id, 6);
+        // Monthly performance
+        $monthly = get_monthly_performance($koneksi, $investasi_id, 6);
         
         return [
             'current_value' => $current,
@@ -452,12 +547,20 @@ function get_investment_performance_summary($koneksi, $investasi_id) {
     }
 }
 
+/**
+ * Batch recalculate all investments
+ * Should be run via cron job daily
+ * 
+ * @param PDO $koneksi Database connection
+ * @return array Batch result
+ */
 function batch_recalculate_all_investments($koneksi) {
     $start_time = microtime(true);
     
     $result = auto_recalculate_investment($koneksi, null);
     
-    update_investment_monthly_stats($koneksi);
+    // Update monthly stats for current month
+    update_monthly_performance($koneksi);
     
     $execution_time = microtime(true) - $start_time;
     
@@ -474,12 +577,20 @@ function batch_recalculate_all_investments($koneksi) {
 }
 
 // ========================================
-// 6. TRIGGER FUNCTIONS (FIXED v3.1.2)
+// 6. TRIGGER FUNCTIONS - AUTO CALL
 // ========================================
 
+/**
+ * Trigger after adding profit (keuntungan)
+ * Call this in upload_keuntungan.php after successful insert
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $keuntungan_id Profit record ID
+ * @return array Result
+ */
 function trigger_after_profit_added($koneksi, $keuntungan_id) {
     try {
-        // Get profit data FIRST
+        // Get profit details
         $sql = "SELECT investasi_id, jumlah_keuntungan, tanggal_keuntungan
                 FROM keuntungan_investasi WHERE id = ?";
         $stmt = $koneksi->prepare($sql);
@@ -490,27 +601,23 @@ function trigger_after_profit_added($koneksi, $keuntungan_id) {
             throw new Exception("Profit record not found");
         }
         
-        // Now we have $investasi_id
         $investasi_id = $profit['investasi_id'];
         $jumlah = (float)$profit['jumlah_keuntungan'];
         
-        // Update timestamp
-        $sql_update = "UPDATE investasi SET updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-        $stmt_upd = $koneksi->prepare($sql_update);
-        $stmt_upd->execute([$investasi_id]);
-        
-        // ✅ FIXED: Pass FALSE to prevent nested transaction
-        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id, false);
+        // Recalculate investment
+        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id);
         
         if (!$recalc_result['success']) {
             throw new Exception("Recalculation failed: " . $recalc_result['error']);
         }
         
+        // Log the change
         $new_value = $recalc_result['investments'][$investasi_id]['nilai_sekarang'];
         log_investment_change($koneksi, $investasi_id, 'keuntungan', $keuntungan_id,
                              $new_value, $jumlah, 
                              "Profit added: " . format_currency($jumlah));
         
+        // Update daily snapshot
         update_daily_snapshot($koneksi, $investasi_id, $new_value, $jumlah, 0);
         
         return [
@@ -529,9 +636,17 @@ function trigger_after_profit_added($koneksi, $keuntungan_id) {
     }
 }
 
+/**
+ * Trigger after adding loss (kerugian)
+ * Call this in upload_kerugian.php after successful insert
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $kerugian_id Loss record ID
+ * @return array Result
+ */
 function trigger_after_loss_added($koneksi, $kerugian_id) {
     try {
-        // Get loss data FIRST
+        // Get loss details
         $sql = "SELECT investasi_id, jumlah_kerugian, tanggal_kerugian
                 FROM kerugian_investasi WHERE id = ?";
         $stmt = $koneksi->prepare($sql);
@@ -542,27 +657,23 @@ function trigger_after_loss_added($koneksi, $kerugian_id) {
             throw new Exception("Loss record not found");
         }
         
-        // Now we have $investasi_id
         $investasi_id = $loss['investasi_id'];
         $jumlah = (float)$loss['jumlah_kerugian'];
         
-        // Update timestamp
-        $sql_update = "UPDATE investasi SET updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-        $stmt_upd = $koneksi->prepare($sql_update);
-        $stmt_upd->execute([$investasi_id]);
-        
-        // ✅ FIXED: Pass FALSE to prevent nested transaction
-        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id, false);
+        // Recalculate investment
+        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id);
         
         if (!$recalc_result['success']) {
             throw new Exception("Recalculation failed: " . $recalc_result['error']);
         }
         
+        // Log the change
         $new_value = $recalc_result['investments'][$investasi_id]['nilai_sekarang'];
         log_investment_change($koneksi, $investasi_id, 'kerugian', $kerugian_id,
                              $new_value, -$jumlah, 
                              "Loss added: " . format_currency($jumlah));
         
+        // Update daily snapshot
         update_daily_snapshot($koneksi, $investasi_id, $new_value, 0, $jumlah);
         
         return [
@@ -581,10 +692,19 @@ function trigger_after_loss_added($koneksi, $kerugian_id) {
     }
 }
 
+/**
+ * Trigger after updating profit/loss
+ * Call this in edit pages after successful update
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $investasi_id Investment ID
+ * @param string $type 'profit' or 'loss'
+ * @return array Result
+ */
 function trigger_after_transaction_updated($koneksi, $investasi_id, $type = 'profit') {
     try {
-        // ✅ FIXED: Pass FALSE to prevent nested transaction
-        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id, false);
+        // Recalculate investment
+        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id);
         
         if (!$recalc_result['success']) {
             throw new Exception("Recalculation failed: " . $recalc_result['error']);
@@ -592,10 +712,12 @@ function trigger_after_transaction_updated($koneksi, $investasi_id, $type = 'pro
         
         $new_value = $recalc_result['investments'][$investasi_id]['nilai_sekarang'];
         
+        // Log the change
         log_investment_change($koneksi, $investasi_id, 'koreksi', null,
                              $new_value, 0, 
                              ucfirst($type) . " transaction updated");
         
+        // Update daily snapshot
         update_daily_snapshot($koneksi, $investasi_id, $new_value);
         
         return [
@@ -613,10 +735,20 @@ function trigger_after_transaction_updated($koneksi, $investasi_id, $type = 'pro
     }
 }
 
+/**
+ * Trigger after deleting profit/loss
+ * Call this in delete pages after successful deletion
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $investasi_id Investment ID
+ * @param string $type 'profit' or 'loss'
+ * @param float $amount Deleted amount
+ * @return array Result
+ */
 function trigger_after_transaction_deleted($koneksi, $investasi_id, $type, $amount) {
     try {
-        // ✅ FIXED: Pass FALSE to prevent nested transaction
-        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id, false);
+        // Recalculate investment
+        $recalc_result = auto_recalculate_investment($koneksi, $investasi_id);
         
         if (!$recalc_result['success']) {
             throw new Exception("Recalculation failed: " . $recalc_result['error']);
@@ -624,11 +756,13 @@ function trigger_after_transaction_deleted($koneksi, $investasi_id, $type, $amou
         
         $new_value = $recalc_result['investments'][$investasi_id]['nilai_sekarang'];
         
+        // Log the change
         $change_amount = $type === 'profit' ? -$amount : $amount;
         log_investment_change($koneksi, $investasi_id, 'koreksi', null,
                              $new_value, $change_amount, 
                              ucfirst($type) . " deleted: " . format_currency($amount));
         
+        // Update daily snapshot
         update_daily_snapshot($koneksi, $investasi_id, $new_value);
         
         return [
@@ -650,16 +784,26 @@ function trigger_after_transaction_deleted($koneksi, $investasi_id, $type, $amou
 // 7. DASHBOARD HELPER FUNCTIONS
 // ========================================
 
+/**
+ * Get global statistics with trend analysis
+ * Enhanced version of existing get_global_stats
+ * 
+ * @param PDO $koneksi Database connection
+ * @return array Global stats with trends
+ */
 function get_enhanced_global_stats($koneksi) {
     try {
+        // Current stats from view
         $sql = "SELECT * FROM v_statistik_global LIMIT 1";
         $stmt = $koneksi->query($sql);
         $current = $stmt->fetch(PDO::FETCH_ASSOC);
         
+        // Get all investments for detailed analysis
         $sql_all = "SELECT * FROM v_investasi_summary ORDER BY roi_persen DESC";
         $stmt_all = $koneksi->query($sql_all);
         $all_investments = $stmt_all->fetchAll(PDO::FETCH_ASSOC);
         
+        // Categorize by performance
         $top_performers = [];
         $under_performers = [];
         $stable_performers = [];
@@ -675,6 +819,7 @@ function get_enhanced_global_stats($koneksi) {
             }
         }
         
+        // Get today's changes
         $today = date('Y-m-d');
         $sql_today = "SELECT 
                      COUNT(DISTINCT investasi_id) as investments_changed,
@@ -691,7 +836,7 @@ function get_enhanced_global_stats($koneksi) {
             'performance_breakdown' => [
                 'top_performers' => [
                     'count' => count($top_performers),
-                    'investments' => array_slice($top_performers, 0, 5)
+                    'investments' => array_slice($top_performers, 0, 5) // Top 5
                 ],
                 'under_performers' => [
                     'count' => count($under_performers),
@@ -712,10 +857,18 @@ function get_enhanced_global_stats($koneksi) {
     }
 }
 
+/**
+ * Get investment alerts
+ * Returns investments that need attention
+ * 
+ * @param PDO $koneksi Database connection
+ * @return array Alerts
+ */
 function get_investment_alerts($koneksi) {
     try {
         $alerts = [];
         
+        // Get all active investments
         $sql = "SELECT * FROM v_investasi_summary";
         $stmt = $koneksi->query($sql);
         $investments = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -724,6 +877,7 @@ function get_investment_alerts($koneksi) {
             $roi = (float)$inv['roi_persen'];
             $id = $inv['id'];
             
+            // Alert: Large loss (ROI < -20%)
             if ($roi < -20) {
                 $alerts[] = [
                     'type' => 'danger',
@@ -734,6 +888,7 @@ function get_investment_alerts($koneksi) {
                 ];
             }
             
+            // Alert: Excellent performance (ROI > 50%)
             if ($roi > 50) {
                 $alerts[] = [
                     'type' => 'success',
@@ -744,6 +899,7 @@ function get_investment_alerts($koneksi) {
                 ];
             }
             
+            // Alert: Declining trend (last 7 days)
             $history = get_daily_snapshot_history($koneksi, $id, 7);
             $decline_count = 0;
             foreach ($history as $day) {
@@ -773,6 +929,14 @@ function get_investment_alerts($koneksi) {
 // 8. MAINTENANCE & UTILITY
 // ========================================
 
+/**
+ * Clean old snapshots (keep last 90 days only)
+ * Should be run monthly via cron
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $keep_days Number of days to keep
+ * @return int Number of deleted records
+ */
 function cleanup_old_snapshots($koneksi, $keep_days = 90) {
     try {
         $cutoff_date = date('Y-m-d', strtotime("-$keep_days days"));
@@ -793,6 +957,13 @@ function cleanup_old_snapshots($koneksi, $keep_days = 90) {
     }
 }
 
+/**
+ * Initialize snapshots for existing investments
+ * Run once after database migration
+ * 
+ * @param PDO $koneksi Database connection
+ * @return array Result
+ */
 function initialize_snapshots_for_existing_investments($koneksi) {
     try {
         $sql = "SELECT id FROM investasi WHERE status = 'aktif'";
@@ -823,5 +994,5 @@ function initialize_snapshots_for_existing_investments($koneksi) {
 }
 
 // ========================================
-// EOF - Auto Calculate Investment v3.1.2
+// EOF - Auto Calculate Investment v3.1
 // ========================================

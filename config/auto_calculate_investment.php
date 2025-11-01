@@ -994,25 +994,5 @@ function initialize_snapshots_for_existing_investments($koneksi) {
 }
 
 // ========================================
-// 9. CURRENCY FORMATTING HELPER
-// ========================================
-
-/**
- * Format currency for display
- * 
- * @param float $amount Amount to format
- * @param string $currency Currency symbol
- * @return string Formatted currency
- */
-function format_currency($amount, $currency = 'Rp') {
-    if ($amount == 0) return $currency . ' 0';
-    
-    $formatted = number_format(abs($amount), 0, ',', '.');
-    $sign = $amount < 0 ? '-' : '';
-    
-    return $sign . $currency . ' ' . $formatted;
-}
-
-// ========================================
 // EOF - Auto Calculate Investment v3.1
 // ========================================

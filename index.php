@@ -693,6 +693,9 @@ foreach ($investasi_aktif as $inv) {
     scrollBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 
     function showInvestmentDetail(id) {
+        console.log('=== showInvestmentDetail START ===');
+        console.log('Investment ID:', id);
+        
         const modal = document.getElementById('investmentModal');
         const modalBody = document.getElementById('modalBody');
         modal.classList.add('show');
@@ -701,19 +704,40 @@ foreach ($investasi_aktif as $inv) {
         // Reset modal body
         modalBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div><p>Memuat detail...</p></div>';
         
-        fetch(`get_investment_detail.php?id=${id}`)
-            .then(res => res.json())
+        const apiUrl = `get_investment_detail.php?id=${id}`;
+        console.log('Fetching:', apiUrl);
+        
+        fetch(apiUrl)
+            .then(res => {
+                console.log('Response status:', res.status);
+                console.log('Response OK:', res.ok);
+                return res.json();
+            })
             .then(data => {
-                console.log('API Response:', data); // Debug log
+                console.log('=== API RESPONSE ===');
+                console.log('Success:', data.success);
+                console.log('Full data:', data);
+                
                 if (data.success) {
+                    console.log('Investment data:', data.investment);
+                    console.log('Has bukti_data:', !!data.investment.bukti_data);
+                    if (data.investment.bukti_data) {
+                        console.log('Bukti data:', data.investment.bukti_data);
+                        console.log('Preview URL:', data.investment.bukti_data.preview_url);
+                        console.log('Is Image:', data.investment.bukti_data.is_image);
+                    }
                     displayInvestmentDetail(data.investment);
                 } else {
+                    console.error('API returned success: false');
                     modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>${data.message}</p></div>`;
                 }
             })
             .catch(error => {
-                console.error('Fetch error:', error);
-                modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>Terjadi kesalahan saat memuat data</p></div>`;
+                console.error('=== FETCH ERROR ===');
+                console.error('Error:', error);
+                console.error('Error message:', error.message);
+                console.error('Error stack:', error.stack);
+                modalBody.innerHTML = `<div class="modal-error"><i class="fas fa-exclamation-triangle"></i><p>Terjadi kesalahan saat memuat data</p><p style="font-size: 12px; margin-top: 8px; color: #94a3b8;">${error.message}</p></div>`;
             });
     }
 
@@ -733,32 +757,38 @@ foreach ($investasi_aktif as $inv) {
         const buktiBlock = (data) => {
             console.log('Rendering bukti:', data); // Debug log
             if (!data) {
+                console.log('No bukti data provided');
                 return `<div class="detail-no-image"><i class="fas fa-image"></i><p>Tidak ada bukti</p></div>`;
             }
             
             const { preview_url, is_image, is_pdf, original_name, size_formatted } = data;
+            console.log('Preview URL:', preview_url);
+            console.log('Is Image:', is_image);
+            console.log('Is PDF:', is_pdf);
             
             if (is_image) {
-                return `<div class="detail-image">
-                    <img src="${preview_url}" alt="Bukti" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'detail-no-image\\'><i class=\\'fas fa-exclamation-triangle\\'></i><p>Gagal memuat gambar</p></div>'">
-                    <p class="file-meta">${original_name} • ${size_formatted}</p>
+                const imgHtml = `<div class="detail-image" style="text-align: center; padding: 20px; background: #f8fafc; border-radius: 12px; margin-bottom: 20px;">
+                    <img src="${preview_url}" alt="Bukti ${original_name}" style="max-width: 100%; max-height: 400px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" loading="eager" onerror="console.error('Image load failed:', this.src); this.parentElement.innerHTML='<div style=\\'padding: 40px; color: #ef4444;\\'><i class=\\'fas fa-exclamation-triangle fa-3x\\'></i><p style=\\'margin-top: 15px;\\'>Gagal memuat gambar</p><p style=\\'font-size: 12px; color: #94a3b8; margin-top: 5px;\\'>${preview_url}</p></div>'">
+                    <p class="file-meta" style="margin-top: 12px; font-size: 13px; color: #64748b;">${original_name} • ${size_formatted}</p>
                 </div>`;
+                console.log('Generated image HTML');
+                return imgHtml;
             }
             
             if (is_pdf) {
-                return `<div class="detail-document">
-                    <a href="${preview_url}" target="_blank" class="btn-download">
+                return `<div class="detail-document" style="text-align: center; padding: 20px; background: #f8fafc; border-radius: 12px; margin-bottom: 20px;">
+                    <a href="${preview_url}" target="_blank" class="btn-download" style="display: inline-block; padding: 12px 24px; background: #ef4444; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; transition: all 0.3s;">
                         <i class="fas fa-file-pdf"></i> Lihat PDF – ${original_name}
                     </a>
-                    <p class="file-meta">${size_formatted}</p>
+                    <p class="file-meta" style="margin-top: 12px; font-size: 13px; color: #64748b;">${size_formatted}</p>
                 </div>`;
             }
             
-            return `<div class="detail-document">
-                <a href="${preview_url}" target="_blank" class="btn-download">
+            return `<div class="detail-document" style="text-align: center; padding: 20px; background: #f8fafc; border-radius: 12px; margin-bottom: 20px;">
+                <a href="${preview_url}" target="_blank" class="btn-download" style="display: inline-block; padding: 12px 24px; background: #3b82f6; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; transition: all 0.3s;">
                     <i class="fas fa-paperclip"></i> Unduh – ${original_name}
                 </a>
-                <p class="file-meta">${size_formatted}</p>
+                <p class="file-meta" style="margin-top: 12px; font-size: 13px; color: #64748b;">${size_formatted}</p>
             </div>`;
         };
         

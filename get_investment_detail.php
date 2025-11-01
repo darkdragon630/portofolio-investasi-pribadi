@@ -30,7 +30,15 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 
 $id = (int)$_GET['id'];
 
+// Debug log
+error_log("Fetching investment detail for ID: " . $id);
+
 try {
+    // Check database connection
+    if (!$koneksi) {
+        throw new Exception("Database connection failed");
+    }
+
     // Get investment detail
     $sql_investment = "
         SELECT 
@@ -48,6 +56,10 @@ try {
     ";
     
     $stmt_investment = $koneksi->prepare($sql_investment);
+    if (!$stmt_investment) {
+        throw new Exception("Prepare failed: " . $koneksi->error);
+    }
+    
     $stmt_investment->execute([$id]);
     $investment = $stmt_investment->fetch();
     
@@ -59,6 +71,8 @@ try {
         ]);
         exit;
     }
+
+    error_log("Investment found: " . $investment['judul_investasi']);
     
     // Get bukti file data from DATABASE
     $bukti_data = null;
@@ -97,8 +111,14 @@ try {
     ";
     
     $stmt_keuntungan = $koneksi->prepare($sql_keuntungan);
+    if (!$stmt_keuntungan) {
+        throw new Exception("Prepare keuntungan failed: " . $koneksi->error);
+    }
+    
     $stmt_keuntungan->execute([$id]);
     $keuntungan_list = $stmt_keuntungan->fetchAll();
+    
+    error_log("Keuntungan found: " . count($keuntungan_list));
     
     // Get only LATEST kerugian for this investment
     $sql_kerugian = "
@@ -118,8 +138,14 @@ try {
     ";
     
     $stmt_kerugian = $koneksi->prepare($sql_kerugian);
+    if (!$stmt_kerugian) {
+        throw new Exception("Prepare kerugian failed: " . $koneksi->error);
+    }
+    
     $stmt_kerugian->execute([$id]);
     $kerugian_terbaru = $stmt_kerugian->fetch();
+    
+    error_log("Kerugian terbaru found: " . ($kerugian_terbaru ? 'Yes' : 'No'));
     
     // Calculate totals
     $total_keuntungan = 0;
@@ -160,7 +186,7 @@ try {
         'has_bukti' => !empty($investment['bukti_file']),
         'bukti_data' => $bukti_data,
         'keuntungan' => [],
-        'kerugian_terbaru' => null, // Hanya satu kerugian terbaru
+        'kerugian_terbaru' => null,
         'statistics' => [
             'total_transactions' => count($keuntungan_list) + ($kerugian_terbaru ? 1 : 0),
             'profit_count' => count($keuntungan_list),
@@ -248,11 +274,13 @@ try {
         ];
     }
     
+    error_log("Successfully prepared response data");
+    
     // Success response
     echo json_encode([
         'success' => true,
         'investment' => $response_data
-    ], JSON_PRETTY_PRINT);
+    ]);
     
 } catch (Exception $e) {
     // Log error
@@ -263,8 +291,7 @@ try {
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'message' => 'Internal server error',
-        'error' => $e->getMessage() // Remove in production
+        'message' => 'Terjadi kesalahan: ' . $e->getMessage()
     ]);
 }
 

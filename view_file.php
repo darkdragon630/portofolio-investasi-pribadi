@@ -1,8 +1,8 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * View File from Database - Investment Files Only
- * Fixed Version with Built-in File Display
+ * View File from Database - Base64 Storage Version
+ * FIXED: Using display_file_from_db() from koneksi.php
  */
 
 require_once 'config/koneksi.php';
@@ -10,7 +10,7 @@ require_once 'config/koneksi.php';
 // Enable error logging
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
-error_log("=== VIEW_FILE.PHP START ===");
+error_log("=== VIEW_FILE.PHP START (Base64 Version) ===");
 
 // Validate parameters
 if (!isset($_GET['type']) || !isset($_GET['id'])) {
@@ -50,7 +50,7 @@ try {
     $stmt = $koneksi->prepare($sql);
     
     if (!$stmt) {
-        throw new Exception("Failed to prepare statement: " . $koneksi->error);
+        throw new Exception("Failed to prepare statement");
     }
     
     $stmt->execute([$record_id]);
@@ -69,87 +69,60 @@ try {
     }
     
     $bukti_file = $result['bukti_file'];
-    error_log("bukti_file raw data: " . $bukti_file);
+    error_log("bukti_file length: " . strlen($bukti_file) . " chars");
     
-    // Parse bukti_file format: filename|original_name|size|mime_type|timestamp
-    $parts = explode('|', $bukti_file);
+    // Parse bukti_file using function from koneksi.php
+    $file_data = parse_bukti_file($bukti_file);
     
-    if (count($parts) < 5) {
-        error_log("Invalid bukti_file format. Parts count: " . count($parts));
+    if (!$file_data) {
+        error_log("Failed to parse bukti_file");
         http_response_code(500);
         die('Format file tidak valid');
     }
     
-    $filename = $parts[0];
-    $original_name = $parts[1];
-    $file_size = (int)$parts[2];
-    $mime_type = $parts[3];
-    $timestamp = $parts[4];
-    
-    error_log("Parsed - filename: $filename, original: $original_name, mime: $mime_type");
-    
-    // Construct file path
-    $upload_dir = __DIR__ . '/uploads/';
-    $file_path = $upload_dir . $filename;
-    
-    error_log("File path: $file_path");
-    error_log("File exists: " . (file_exists($file_path) ? 'YES' : 'NO'));
-    
-    // Check if file exists
-    if (!file_exists($file_path)) {
-        error_log("File not found on disk: $file_path");
-        http_response_code(404);
-        die('File tidak ditemukan di server');
-    }
-    
-    // Check if file is readable
-    if (!is_readable($file_path)) {
-        error_log("File not readable: $file_path");
-        http_response_code(500);
-        die('File tidak dapat dibaca');
-    }
-    
-    $actual_file_size = filesize($file_path);
-    error_log("File size on disk: $actual_file_size bytes");
+    error_log("Parsed - original: {$file_data['original_name']}, mime: {$file_data['mime_type']}, size: {$file_data['size']}");
     
     // Clear any output buffers
     while (ob_get_level()) {
         ob_end_clean();
     }
     
+    // Decode base64
+    $file_content = base64_decode($file_data['base64_data']);
+    
+    if ($file_content === false) {
+        error_log("Failed to decode base64 data");
+        http_response_code(500);
+        die('Gagal decode file data');
+    }
+    
+    $actual_size = strlen($file_content);
+    error_log("Decoded file size: $actual_size bytes");
+    
     // Set headers
-    header('Content-Type: ' . $mime_type);
-    header('Content-Length: ' . $actual_file_size);
+    header('Content-Type: ' . $file_data['mime_type']);
+    header('Content-Length: ' . $actual_size);
     header('Cache-Control: public, max-age=31536000');
     header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 31536000) . ' GMT');
     
     if ($is_download) {
         // Force download
-        header('Content-Disposition: attachment; filename="' . addslashes($original_name) . '"');
-        error_log("Serving as download: $original_name");
+        header('Content-Disposition: attachment; filename="' . addslashes($file_data['original_name']) . '"');
+        error_log("Serving as download: {$file_data['original_name']}");
     } else {
         // Inline display (for images and PDFs)
-        $extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+        $extension = strtolower($file_data['extension']);
         if (in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'])) {
-            header('Content-Disposition: inline; filename="' . addslashes($original_name) . '"');
-            error_log("Serving inline: $original_name");
+            header('Content-Disposition: inline; filename="' . addslashes($file_data['original_name']) . '"');
+            error_log("Serving inline: {$file_data['original_name']}");
         } else {
-            header('Content-Disposition: attachment; filename="' . addslashes($original_name) . '"');
-            error_log("Serving as download (non-viewable): $original_name");
+            header('Content-Disposition: attachment; filename="' . addslashes($file_data['original_name']) . '"');
+            error_log("Serving as download (non-viewable): {$file_data['original_name']}");
         }
     }
     
-    // Output file
-    $fp = fopen($file_path, 'rb');
-    if ($fp === false) {
-        error_log("Failed to open file: $file_path");
-        http_response_code(500);
-        die('Gagal membuka file');
-    }
-    
-    error_log("Starting file output...");
-    fpassthru($fp);
-    fclose($fp);
+    // Output file content
+    echo $file_content;
     
     error_log("File served successfully");
     error_log("=== VIEW_FILE.PHP END (SUCCESS) ===");

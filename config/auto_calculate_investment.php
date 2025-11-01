@@ -486,7 +486,9 @@ function trigger_after_profit_added($koneksi, $keuntungan_id) {
         $stmt = $koneksi->prepare($sql);
         $stmt->execute([$keuntungan_id]);
         $profit = $stmt->fetch(PDO::FETCH_ASSOC);
-        
+        $sql_update = "UPDATE investasi SET updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        $stmt = $koneksi->prepare($sql_update);
+        $stmt->execute([$investasi_id]);
         if (!$profit) {
             throw new Exception("Profit record not found");
         }
@@ -530,6 +532,9 @@ function trigger_after_loss_added($koneksi, $kerugian_id) {
         $stmt = $koneksi->prepare($sql);
         $stmt->execute([$kerugian_id]);
         $loss = $stmt->fetch(PDO::FETCH_ASSOC);
+        $sql_update = "UPDATE investasi SET updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        $stmt = $koneksi->prepare($sql_update);
+        $stmt->execute([$investasi_id]);
         
         if (!$loss) {
             throw new Exception("Loss record not found");

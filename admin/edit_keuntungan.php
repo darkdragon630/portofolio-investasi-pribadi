@@ -2,10 +2,12 @@
 /**
  * SAZEN Investment Portfolio Manager v3.0
  * Edit Keuntungan - Database Storage
+ * FIXED: Currency parsing issue
  */
 
 session_start();
 require_once "../config/koneksi.php";
+require_once "../config/functions.php";
 
 // Authentication Check
 if (!isset($_SESSION['user_id'])) {
@@ -66,7 +68,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $kategori_id = $_POST['kategori_id'] ?? '';
         $judul_keuntungan = sanitize_input($_POST['judul_keuntungan'] ?? '');
         $deskripsi = sanitize_input($_POST['deskripsi'] ?? '');
-        $jumlah_keuntungan = parse_currency($_POST['jumlah_keuntungan'] ?? '0');
+        
+        // USE FIXED PARSER
+        $jumlah_keuntungan = parse_currency_fixed($_POST['jumlah_keuntungan'] ?? '0');
+        
+        // Debug log (optional - remove in production)
+        error_log("Edit - Original input: " . ($_POST['jumlah_keuntungan'] ?? '0'));
+        error_log("Edit - Parsed value: " . $jumlah_keuntungan);
         
         // Parse percentage
         $persentase_input = $_POST['persentase_keuntungan'] ?? '';
@@ -263,10 +271,10 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                                name="jumlah_keuntungan" 
                                id="jumlah_keuntungan" 
                                class="form-control" 
-                               placeholder="Contoh: 1.500.000 atau 1500000"
+                               placeholder="Contoh: 1500000 atau 1.500.000"
                                value="<?= number_format($keuntungan['jumlah_keuntungan'], 0, ',', '.') ?>" 
                                required>
-                        <small class="form-hint">Format: 1.500.000 atau 1500000</small>
+                        <small class="form-hint">Format bebas: 4, 1500000, atau 1.500.000</small>
                     </div>
                     
                     <div class="form-group">
@@ -352,6 +360,18 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                             <div class="radio-content">
                                 <i class="fas fa-gift"></i>
                                 <span>Bonus</span>
+                            </div>
+                        </label>
+
+                        <label class="radio-card">
+                            <input type="radio" 
+                                   name="sumber_keuntungan" 
+                                   value="imbal_hasil"
+                                   <?= $keuntungan['sumber_keuntungan'] == 'imbal_hasil' ? 'checked' : '' ?> 
+                                   required>
+                            <div class="radio-content">
+                                <i class="fas fa-coins"></i>
+                                <span>Imbal Hasil</span>
                             </div>
                         </label>
                         

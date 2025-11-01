@@ -68,7 +68,7 @@ if (!isset($_SESSION[$rate_key])) {
 }
 
 /* =========================
-   GENERATE TOKEN BARU
+   FUNGSI UNTUK GENERATE TOKEN BARU
 ========================= */
 try {
     $_SESSION['csrf_token'] = generate_csrf_token();

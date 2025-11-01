@@ -1,11 +1,14 @@
 <?php
 /**
- * SAZEN Investment Portfolio Manager v3.0
- * Upload Kerugian - Database Storage
+ * SAZEN Investment Portfolio Manager v3.1
+ * Upload Kerugian - WITH AUTO CALCULATE
+ * UPDATED: Terintegrasi dengan auto_calculate_investment.php
  */
 
 session_start();
 require_once "../config/koneksi.php";
+require_once "../config/functions.php";
+require_once "../config/auto_calculate_investment.php"; // ✅ NEW: Auto-calc functions
 
 // Authentication Check
 if (!isset($_SESSION['user_id'])) {
@@ -36,12 +39,20 @@ if ($flash) {
 // Process form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
+        $koneksi->beginTransaction(); // ✅ Start transaction
+        
         // Collect form data
         $investasi_id = $_POST['investasi_id'] ?? '';
         $kategori_id = $_POST['kategori_id'] ?? '';
         $judul_kerugian = sanitize_input($_POST['judul_kerugian'] ?? '');
         $deskripsi = sanitize_input($_POST['deskripsi'] ?? '');
-        $jumlah_kerugian = parse_currency($_POST['jumlah_kerugian'] ?? '0');
+        
+        // USE FIXED PARSER
+        $jumlah_kerugian = parse_currency_fixed($_POST['jumlah_kerugian'] ?? '0');
+        
+        // Debug log
+        error_log("Upload Kerugian - Original input: " . ($_POST['jumlah_kerugian'] ?? '0'));
+        error_log("Upload Kerugian - Parsed value: " . $jumlah_kerugian);
         
         // Parse percentage
         $persentase_input = $_POST['persentase_kerugian'] ?? '';
@@ -72,11 +83,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
         
-        // Handle file upload to DATABASE
+        // Handle file upload
         $bukti_file_data = null;
         if (isset($_FILES['bukti_file']) && $_FILES['bukti_file']['error'] !== UPLOAD_ERR_NO_FILE) {
             try {
-                $bukti_file_data = file_get_contents($_FILES['bukti_file']['tmp_name']);
+                $bukti_file_data = handle_file_upload_to_db($_FILES['bukti_file']);
             } catch (Exception $e) {
                 throw new Exception("Gagal upload bukti: " . $e->getMessage());
             }
@@ -94,8 +105,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $jumlah_kerugian, $persentase_kerugian, $tanggal_kerugian,
             $sumber_kerugian, $status, $bukti_file_data
         ])) {
+            $kerugian_id = $koneksi->lastInsertId();
+            
+            // ✅ NEW: AUTO RECALCULATE INVESTMENT
+            $calc_result = trigger_after_loss_added($koneksi, $kerugian_id);
+            
+            if (!$calc_result['success']) {
+                throw new Exception("Gagal recalculate: " . $calc_result['error']);
+            }
+            
+            $koneksi->commit(); // ✅ Commit transaction
+            
+            // Success message with new calculated values
             $msg = "✅ Kerugian berhasil ditambahkan!";
             if ($bukti_file_data) $msg .= " 📎 Bukti tersimpan";
+            $msg .= "\n📊 Nilai investasi diupdate otomatis: " . 
+                    format_currency($calc_result['new_value']) . 
+                    " (ROI: " . number_format($calc_result['roi'], 2) . "%)";
             
             redirect_with_message("../dashboard.php", "success", $msg);
         } else {
@@ -103,6 +129,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
         
     } catch (Exception $e) {
+        if ($koneksi->inTransaction()) {
+            $koneksi->rollBack(); // ✅ Rollback on error
+        }
         error_log("Upload Kerugian Error: " . $e->getMessage());
         $error = '❌ ' . $e->getMessage();
     }
@@ -113,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tambah Kerugian - SAZEN v3.0</title>
+    <title>Tambah Kerugian - SAZEN v3.1</title>
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -135,20 +164,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
                 <h1>Tambah Kerugian</h1>
                 <p>Catat kerugian dari investasi Anda</p>
+                <span class="version-badge">v3.1 - Auto Calculate</span>
             </div>
 
             <!-- ===== MESSAGES ===== -->
             <?php if ($error): ?>
                 <div class="alert alert-error">
                     <i class="fas fa-exclamation-circle"></i>
-                    <span><?= htmlspecialchars($error) ?></span>
+                    <span><?= nl2br(htmlspecialchars($error)) ?></span>
                 </div>
             <?php endif; ?>
 
             <?php if ($success): ?>
                 <div class="alert alert-success">
                     <i class="fas fa-check-circle"></i>
-                    <span><?= htmlspecialchars($success) ?></span>
+                    <span><?= nl2br(htmlspecialchars($success)) ?></span>
                 </div>
             <?php endif; ?>
 
@@ -211,9 +241,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                name="jumlah_kerugian" 
                                id="jumlah_kerugian" 
                                class="form-control" 
-                               placeholder="Contoh: 1.500.000 atau 1500000" 
+                               placeholder="Contoh: 1500000 atau 1.500.000" 
                                required>
-                        <small class="form-hint">Format: 1.500.000 atau 1500000</small>
+                        <small class="form-hint">Format bebas: 4, 1500000, atau 1.500.000</small>
                     </div>
                     
                     <div class="form-group">

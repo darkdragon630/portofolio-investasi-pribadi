@@ -48,7 +48,12 @@ document.getElementById('jumlah_kerugian').addEventListener('blur', function() {
     if (!lossRaw || amount <= 0) return;
     
     // Parse loss (remove dots and replace comma with dot)
-    const loss = parseFloat(lossRaw.replace(/\./g, '').replace(',', '.'));
+    const loss = parseFloat(
+    lossRaw
+        .replace(/[^\d,.]/g, '')
+        .replace(/\./g, '')
+        .replace(/,/g, '.')
+) || 0;
     
     if (loss >= 0) {
         const percentage = (loss / amount) * 100;
@@ -63,14 +68,21 @@ document.getElementById('jumlah_kerugian').addEventListener('blur', function() {
 const jumlahInput = document.getElementById('jumlah_kerugian');
 
 jumlahInput.addEventListener('blur', function() {
-    let value = this.value.replace(/[^\d]/g, '');
-    if (value) {
-        this.value = parseInt(value).toLocaleString('id-ID');
-    }
+    let v = this.value
+        .replace(/[^\d,.]/g, '')   // buang selain digit, koma, titik
+        .replace(/,/g, '#')        // tandai koma asli
+        .replace(/\./g, '')        // buang titik ribuan sementara
+        .replace(/#/g, '.');       // kembalikan koma jadi titik desimal
+
+    const num = parseFloat(v) || 0;
+    this.value = num.toLocaleString('id-ID', { minimumFractionDigits: 2 });
 });
 
 jumlahInput.addEventListener('focus', function() {
-    this.value = this.value.replace(/[^\d]/g, '');
+    this.value = this.value
+        .replace(/[^\d,.]/g, '')
+        .replace(/\./g, '')   // buang titik ribuan
+        .replace(/,/g, '.');  // koma jadi titik desimal
 });
 
 
@@ -200,9 +212,13 @@ function handleDrop(e) {
 // FORM VALIDATION
 // ===================================
 document.querySelector('.data-form').addEventListener('submit', function(e) {
-    const jumlah = document.getElementById('jumlah_kerugian').value.replace(/[^\d]/g, '');
+   const raw = document.getElementById('jumlah_kerugian').value
+                .replace(/[^\d,.]/g, '')
+                .replace(/\./g, '')
+                .replace(/,/g, '.');
+   const jumlah = parseFloat(raw) || 0;
     
-    if (!jumlah || parseInt(jumlah) < 0) {
+    if (jumlah <= 0) {
         e.preventDefault();
         alert('Jumlah kerugian harus diisi dan tidak boleh negatif!');
         return false;

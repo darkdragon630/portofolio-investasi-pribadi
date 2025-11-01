@@ -2,10 +2,12 @@
 /**
  * SAZEN Investment Portfolio Manager v3.0
  * Edit Kerugian - Database Storage
+ * FIXED: Currency parsing issue
  */
 
 session_start();
 require_once "../config/koneksi.php";
+require_once "../config/functions.php";
 
 // Authentication Check
 if (!isset($_SESSION['user_id'])) {
@@ -66,7 +68,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $kategori_id = $_POST['kategori_id'] ?? '';
         $judul_kerugian = sanitize_input($_POST['judul_kerugian'] ?? '');
         $deskripsi = sanitize_input($_POST['deskripsi'] ?? '');
-        $jumlah_kerugian = parse_currency($_POST['jumlah_kerugian'] ?? '0');
+        
+        // USE FIXED PARSER
+        $jumlah_kerugian = parse_currency_fixed($_POST['jumlah_kerugian'] ?? '0');
+        
+        // Debug log (optional - remove in production)
+        error_log("Edit Kerugian - Original input: " . ($_POST['jumlah_kerugian'] ?? '0'));
+        error_log("Edit Kerugian - Parsed value: " . $jumlah_kerugian);
         
         // Parse percentage
         $persentase_input = $_POST['persentase_kerugian'] ?? '';
@@ -263,10 +271,10 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                                name="jumlah_kerugian" 
                                id="jumlah_kerugian" 
                                class="form-control" 
-                               placeholder="Contoh: 1.500.000 atau 1500000"
+                               placeholder="Contoh: 1500000 atau 1.500.000"
                                value="<?= number_format($kerugian['jumlah_kerugian'], 0, ',', '.') ?>" 
                                required>
-                        <small class="form-hint">Format: 1.500.000 atau 1500000</small>
+                        <small class="form-hint">Format bebas: 4, 1500000, atau 1.500.000</small>
                     </div>
                     
                     <div class="form-group">

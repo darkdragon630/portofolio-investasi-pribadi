@@ -1,9 +1,9 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * View File from Database
+ * View File from Database - Investment Files Only
+ * Updated: Removed cash_balance & transaksi_jual (moved to separate files)
  */
-
 require_once 'config/koneksi.php';
 
 // Validate parameters
@@ -28,7 +28,7 @@ switch ($type) {
         break;
     default:
         http_response_code(400);
-        die('Invalid file type');
+        die('Invalid file type. Allowed: investasi, keuntungan, kerugian');
 }
 
 try {
@@ -40,12 +40,16 @@ try {
     
     if (!$result || empty($result['bukti_file'])) {
         http_response_code(404);
-        die('File tidak ditemukan');
+        die('File tidak ditemukan atau belum ada bukti file');
     }
     
-    // Parse and display file
+    // Parse and display file using function from koneksi.php
     display_file_from_db($result['bukti_file']);
     
+} catch (PDOException $e) {
+    error_log("View file error (PDO): " . $e->getMessage());
+    http_response_code(500);
+    die('Database error: Terjadi kesalahan saat mengambil file');
 } catch (Exception $e) {
     error_log("View file error: " . $e->getMessage());
     http_response_code(500);

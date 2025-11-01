@@ -1,12 +1,13 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.1.3
- * ULTIMATE Dashboard - FIXED LOGIC
+ * ULTIMATE Dashboard - FIXED LOGIC COMPLETE
  * 
  * FIXED v3.1.3:
  * ✅ Keuntungan = Akumulatif (dijumlahkan semua)
  * ✅ Kerugian = Hanya nilai TERBARU per investasi (tidak dijumlahkan)
  * ✅ Query optimized untuk performa
+ * ✅ Auto-calculate system integrated
  */
 
 session_start();
@@ -125,8 +126,6 @@ $investasi_terjual = array_filter($investasi_all, fn($inv) => ($inv['status'] ??
 $total_modal_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['modal_investasi'], 0);
 $total_nilai_investasi_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['nilai_sekarang'], 0);
 $total_keuntungan_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['total_keuntungan'], 0);
-
-// ✅ FIXED: Kerugian = Sum dari kerugian terbaru tiap investasi aktif
 $total_kerugian_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + ($inv['kerugian_terbaru'] ?? 0), 0);
 
 // Total Aset
@@ -137,12 +136,10 @@ $persentase_investasi = $total_aset > 0 ? ($total_nilai_investasi_aktif / $total
 /* ========================================
    QUERY KEUNTUNGAN & KERUGIAN GLOBAL
 ======================================== */
-// Keuntungan: dijumlahkan semua
 $sql_total_keuntungan = "SELECT COALESCE(SUM(jumlah_keuntungan), 0) as total FROM keuntungan_investasi";
 $stmt_total_keuntungan = $koneksi->query($sql_total_keuntungan);
 $total_keuntungan_global = (float)$stmt_total_keuntungan->fetch()['total'];
 
-// ✅ FIXED: Kerugian global = sum dari kerugian terbaru per investasi
 $sql_total_kerugian_global = "
     SELECT COALESCE(SUM(kerugian_terbaru), 0) as total
     FROM (
@@ -181,7 +178,7 @@ foreach ($investasi_aktif as $inv) {
     $breakdown_kategori[$kategori]['nilai'] += $inv['nilai_sekarang'];
     $breakdown_kategori[$kategori]['modal'] += $inv['modal_investasi'];
     $breakdown_kategori[$kategori]['keuntungan'] += $inv['total_keuntungan'];
-    $breakdown_kategori[$kategori]['kerugian'] += ($inv['kerugian_terbaru'] ?? 0); // ✅ Terbaru
+    $breakdown_kategori[$kategori]['kerugian'] += ($inv['kerugian_terbaru'] ?? 0);
     $breakdown_kategori[$kategori]['count']++;
 }
 uasort($breakdown_kategori, fn($a, $b) => $b['nilai'] - $a['nilai']);
@@ -232,7 +229,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
     <title>Dashboard Admin - SAZEN v3.1.3</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -447,7 +444,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
             <section class="recalculate-section">
                 <div class="recalculate-info">
                     <h3><i class="fas fa-calculator"></i> Auto Calculate System v3.1.3</h3>
-                    <p>Keuntungan = Akumulatif | Kerugian = Nilai Terbaru</p>
+                    <p>✅ Keuntungan = Akumulatif | ✅ Kerugian = Nilai Terbaru per Investasi</p>
                 </div>
                 <div class="recalculate-actions">
                     <?php if ($last_update): ?>
@@ -468,6 +465,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
             <!-- STATS OVERVIEW (8 CARDS) -->
             <section class="stats-overview">
                 <div class="stats-grid-enhanced">
+                    <!-- Saldo Kas -->
                     <div class="stat-card stat-warning">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-wallet"></i></div>
@@ -482,6 +480,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                         </div>
                     </div>
 
+                    <!-- Modal Investasi -->
                     <div class="stat-card stat-info">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-hand-holding-dollar"></i></div>
@@ -497,6 +496,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                         </div>
                     </div>
 
+                    <!-- Nilai Investasi -->
                     <div class="stat-card stat-primary">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-chart-line"></i></div>
@@ -508,6 +508,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                         </div>
                     </div>
 
+                    <!-- Total Aset -->
                     <div class="stat-card stat-purple">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-coins"></i></div>
@@ -525,6 +526,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                         </div>
                     </div>
 
+                    <!-- Total Keuntungan -->
                     <div class="stat-card stat-success">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-arrow-trend-up"></i></div>
@@ -536,6 +538,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                         </div>
                     </div>
 
+                    <!-- Total Kerugian -->
                     <div class="stat-card stat-danger">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-arrow-trend-down"></i></div>
@@ -547,6 +550,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                         </div>
                     </div>
 
+                    <!-- Net Profit -->
                     <div class="stat-card stat-gradient">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-trophy"></i></div>
@@ -558,6 +562,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                         </div>
                     </div>
 
+                    <!-- Total Penjualan -->
                     <div class="stat-card stat-warning">
                         <div class="stat-header">
                             <div class="stat-icon"><i class="fas fa-handshake"></i></div>
@@ -575,7 +580,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                 </div>
             </section>
 
-             <!-- ✅ ASSET ALLOCATION -->
+            <!-- Asset Allocation -->
             <section class="asset-allocation-dashboard">
                 <div class="section-header-inline">
                     <h2 class="section-title">
@@ -600,13 +605,6 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                     </div>
                     <div class="allocation-legend-dashboard">
                         <div class="legend-item-dashboard">
-                            <div class="legend-color cash-color"></div>
-                            <div class="legend-info">
-                                <span class="legend-label">Kas</span>
-                                <span class="legend-value"><?= format_currency($saldo_kas) ?></span>
-                            </div>
-                        </div>
-                        <div class="legend-item-dashboard">
                             <div class="legend-color investment-color"></div>
                             <div class="legend-info">
                                 <span class="legend-label">Investasi</span>
@@ -617,7 +615,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                 </div>
             </section>
 
-            <!-- ✅ QUICK ACTIONS -->
+            <!-- Quick Actions -->
             <section class="quick-actions">
                 <h2 class="section-title">
                     <i class="fas fa-bolt"></i>
@@ -666,7 +664,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                 </div>
             </section>
 
-            <!-- ✅ CASH BALANCE OVERVIEW -->
+            <!-- Cash Balance Overview -->
             <?php if (count($cash_by_category) > 0): ?>
             <section class="card cash-overview">
                 <div class="card-header">
@@ -697,7 +695,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
             </section>
             <?php endif; ?>
 
-            <!-- ✅ CATEGORY BREAKDOWN -->
+            <!-- Category Breakdown -->
             <?php if (count($breakdown_kategori) > 0): ?>
             <section class="category-breakdown-section">
                 <h2 class="section-title">
@@ -746,8 +744,9 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
             </section>
             <?php endif; ?>
 
-            <!-- ✅ ANALYTICS GRID (BREAKDOWN SUMBER) -->
+            <!-- Analytics Grid -->
             <div class="dashboard-grid">
+                <!-- Source Breakdown -->
                 <section class="card source-breakdown">
                     <div class="card-header">
                         <h2 class="card-title">
@@ -797,7 +796,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                 </section>
             </div>
 
-            <!-- ✅ RECENT DATA GRID -->
+            <!-- Recent Data Grid -->
             <div class="recent-data-grid">
                 
                 <!-- Recent Investments -->
@@ -879,6 +878,9 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                                             <?php endif; ?>
                                             <a href="admin/edit_cash.php?id=<?= $cash['id'] ?>" class="btn-icon" title="Edit">
                                                 <i class="fas fa-edit"></i>
+                                            </a>
+                                            <a href="admin/delete_cash.php?id=<?= $cash['id'] ?>" class="btn-icon danger" title="Hapus" onclick="return confirm('Yakin hapus transaksi ini?')">
+                                                <i class="fas fa-trash"></i>
                                             </a>
                                         </div>
                                     </div>
@@ -1023,7 +1025,8 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
         <i class="fas fa-code"></i> v3.1.3 - Fixed Logic
     </div>
 
-   <script>
+    <!-- Scripts -->
+    <script>
         // Loading Screen
         window.addEventListener('load', () => {
             setTimeout(() => {
@@ -1083,7 +1086,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
         });
 
         console.log('%c SAZEN Investment Manager v3.1.3 ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
-        console.log('%c ✅ Fixed Logic: Keuntungan=Akumulatif | Kerugian=Terbaru ', 'color: #10b981; font-size: 12px; font-weight: bold;');
+        console.log('%c ✅ Keuntungan = Akumulatif | ✅ Kerugian = Nilai Terbaru ', 'color: #10b981; font-size: 12px; font-weight: bold;');
     </script>
 </body>
 </html>

@@ -1,12 +1,12 @@
 <?php
 /**
- * SAZEN Investment Portfolio Manager v3.1.2
- * ULTIMATE Dashboard LENGKAP - WITH AUTO CALCULATE
+ * SAZEN Investment Portfolio Manager v3.1.3
+ * ULTIMATE Dashboard - FIXED LOGIC
  * 
- * FIXED v3.1.2:
- * ✅ Fixed flash message handling (500 error fixed)
- * ✅ Semua section dikembalikan
- * ✅ Auto-calculate integration
+ * FIXED v3.1.3:
+ * ✅ Keuntungan = Akumulatif (dijumlahkan semua)
+ * ✅ Kerugian = Hanya nilai TERBARU per investasi (tidak dijumlahkan)
+ * ✅ Query optimized untuk performa
  */
 
 session_start();
@@ -48,7 +48,7 @@ if (isset($_POST['recalculate_all'])) {
     exit;
 }
 
-// ✅ FIXED: Simplified flash message handling
+// Flash message handling
 $flash_message = null;
 $flash_type = null;
 if (isset($_SESSION['_flash'])) {
@@ -74,7 +74,7 @@ $sales_profit_loss = $sales_stats ? (float)$sales_stats['total_profit_loss'] : 0
 $avg_roi_sales = $sales_stats ? (float)$sales_stats['avg_roi'] : 0;
 
 /* ========================================
-   QUERY INVESTASI
+   QUERY INVESTASI (FIXED LOGIC v3.1.3)
 ======================================== */
 $sql_investasi_all = "
     SELECT 
@@ -87,8 +87,13 @@ $sql_investasi_all = "
         i.status,
         k.nama_kategori,
         COALESCE(ku_agg.total_keuntungan, 0) as total_keuntungan,
-        COALESCE(kr_agg.total_kerugian, 0) as total_kerugian,
-        (i.jumlah + COALESCE(ku_agg.total_keuntungan, 0) - COALESCE(kr_agg.total_kerugian, 0)) as nilai_sekarang
+        COALESCE(kr_latest.kerugian_terbaru, 0) as kerugian_terbaru,
+        (i.jumlah + COALESCE(ku_agg.total_keuntungan, 0) - COALESCE(kr_latest.kerugian_terbaru, 0)) as nilai_sekarang,
+        CASE 
+            WHEN i.jumlah > 0 THEN 
+                ((COALESCE(ku_agg.total_keuntungan, 0) - COALESCE(kr_latest.kerugian_terbaru, 0)) / i.jumlah * 100)
+            ELSE 0 
+        END as roi_persen
     FROM investasi i
     JOIN kategori k ON i.kategori_id = k.id
     LEFT JOIN (
@@ -96,34 +101,64 @@ $sql_investasi_all = "
         FROM keuntungan_investasi GROUP BY investasi_id
     ) ku_agg ON i.id = ku_agg.investasi_id
     LEFT JOIN (
-        SELECT investasi_id, SUM(jumlah_kerugian) AS total_kerugian
-        FROM kerugian_investasi GROUP BY investasi_id
-    ) kr_agg ON i.id = kr_agg.investasi_id
+        SELECT investasi_id, jumlah_kerugian as kerugian_terbaru
+        FROM (
+            SELECT 
+                investasi_id, 
+                jumlah_kerugian,
+                ROW_NUMBER() OVER (PARTITION BY investasi_id ORDER BY tanggal_kerugian DESC, created_at DESC) as rn
+            FROM kerugian_investasi
+        ) ranked
+        WHERE rn = 1
+    ) kr_latest ON i.id = kr_latest.investasi_id
     ORDER BY i.tanggal_investasi DESC
 ";
+
 $stmt_investasi_all = $koneksi->query($sql_investasi_all);
 $investasi_all = $stmt_investasi_all->fetchAll();
 
+// Pisahkan berdasarkan status
 $investasi_aktif = array_filter($investasi_all, fn($inv) => ($inv['status'] ?? 'aktif') === 'aktif');
 $investasi_terjual = array_filter($investasi_all, fn($inv) => ($inv['status'] ?? 'aktif') === 'terjual');
 
+// Hitung statistik investasi aktif
 $total_modal_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['modal_investasi'], 0);
 $total_nilai_investasi_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['nilai_sekarang'], 0);
 $total_keuntungan_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['total_keuntungan'], 0);
-$total_kerugian_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + $inv['total_kerugian'], 0);
 
+// ✅ FIXED: Kerugian = Sum dari kerugian terbaru tiap investasi aktif
+$total_kerugian_aktif = array_reduce($investasi_aktif, fn($carry, $inv) => $carry + ($inv['kerugian_terbaru'] ?? 0), 0);
+
+// Total Aset
 $total_aset = $saldo_kas + $total_nilai_investasi_aktif;
 $persentase_kas = $total_aset > 0 ? ($saldo_kas / $total_aset * 100) : 0;
 $persentase_investasi = $total_aset > 0 ? ($total_nilai_investasi_aktif / $total_aset * 100) : 0;
 
 /* ========================================
-   GLOBAL STATS
+   QUERY KEUNTUNGAN & KERUGIAN GLOBAL
 ======================================== */
+// Keuntungan: dijumlahkan semua
 $sql_total_keuntungan = "SELECT COALESCE(SUM(jumlah_keuntungan), 0) as total FROM keuntungan_investasi";
-$total_keuntungan_global = (float)$koneksi->query($sql_total_keuntungan)->fetchColumn();
+$stmt_total_keuntungan = $koneksi->query($sql_total_keuntungan);
+$total_keuntungan_global = (float)$stmt_total_keuntungan->fetch()['total'];
 
-$sql_total_kerugian = "SELECT COALESCE(SUM(jumlah_kerugian), 0) as total FROM kerugian_investasi";
-$total_kerugian_global = (float)$koneksi->query($sql_total_kerugian)->fetchColumn();
+// ✅ FIXED: Kerugian global = sum dari kerugian terbaru per investasi
+$sql_total_kerugian_global = "
+    SELECT COALESCE(SUM(kerugian_terbaru), 0) as total
+    FROM (
+        SELECT investasi_id, jumlah_kerugian as kerugian_terbaru
+        FROM (
+            SELECT 
+                investasi_id, 
+                jumlah_kerugian,
+                ROW_NUMBER() OVER (PARTITION BY investasi_id ORDER BY tanggal_kerugian DESC, created_at DESC) as rn
+            FROM kerugian_investasi
+        ) ranked
+        WHERE rn = 1
+    ) latest_losses
+";
+$stmt_total_kerugian = $koneksi->query($sql_total_kerugian_global);
+$total_kerugian_global = (float)$stmt_total_kerugian->fetch()['total'];
 
 $net_profit = $total_keuntungan_global - $total_kerugian_global;
 $roi_global = $total_modal_aktif > 0 ? (($total_keuntungan_aktif - $total_kerugian_aktif) / $total_modal_aktif * 100) : 0;
@@ -146,7 +181,7 @@ foreach ($investasi_aktif as $inv) {
     $breakdown_kategori[$kategori]['nilai'] += $inv['nilai_sekarang'];
     $breakdown_kategori[$kategori]['modal'] += $inv['modal_investasi'];
     $breakdown_kategori[$kategori]['keuntungan'] += $inv['total_keuntungan'];
-    $breakdown_kategori[$kategori]['kerugian'] += $inv['total_kerugian'];
+    $breakdown_kategori[$kategori]['kerugian'] += ($inv['kerugian_terbaru'] ?? 0); // ✅ Terbaru
     $breakdown_kategori[$kategori]['count']++;
 }
 uasort($breakdown_kategori, fn($a, $b) => $b['nilai'] - $a['nilai']);
@@ -198,7 +233,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Dashboard Admin - SAZEN v3.1</title>
+    <title>Dashboard Admin - SAZEN v3.1.3</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -260,19 +295,30 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
             border-radius: 6px;
             font-size: 13px;
         }
+        .version-badge {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 999;
+        }
         @media (max-width: 768px) {
             .recalculate-section {
                 flex-direction: column;
                 gap: 16px;
                 text-align: center;
             }
-            .recalculate-actions {
-                flex-direction: column;
-                width: 100%;
-            }
-            .btn-recalculate {
-                width: 100%;
-                justify-content: center;
+            .version-badge {
+                bottom: 10px;
+                right: 10px;
+                font-size: 10px;
+                padding: 6px 12px;
             }
         }
     </style>
@@ -397,11 +443,11 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
 
         <div class="container">
 
-            <!-- ✅ RECALCULATE SECTION -->
+            <!-- RECALCULATE SECTION -->
             <section class="recalculate-section">
                 <div class="recalculate-info">
-                    <h3><i class="fas fa-calculator"></i> Auto Calculate System</h3>
-                    <p>Sistem menghitung ulang nilai investasi otomatis setiap ada transaksi</p>
+                    <h3><i class="fas fa-calculator"></i> Auto Calculate System v3.1.3</h3>
+                    <p>Keuntungan = Akumulatif | Kerugian = Nilai Terbaru</p>
                 </div>
                 <div class="recalculate-actions">
                     <?php if ($last_update): ?>
@@ -419,7 +465,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                 </div>
             </section>
 
-            <!-- ✅ STATS OVERVIEW (8 CARDS) -->
+            <!-- STATS OVERVIEW (8 CARDS) -->
             <section class="stats-overview">
                 <div class="stats-grid-enhanced">
                     <div class="stat-card stat-warning">
@@ -486,7 +532,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                         <div class="stat-body">
                             <div class="stat-label">Total Keuntungan</div>
                             <div class="stat-value positive"><?= format_currency($total_keuntungan_global) ?></div>
-                            <div class="stat-footer"><?= $total_transaksi_keuntungan ?> Transaksi</div>
+                            <div class="stat-footer"><?= $total_transaksi_keuntungan ?> Transaksi (Akumulatif)</div>
                         </div>
                     </div>
 
@@ -497,7 +543,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                         <div class="stat-body">
                             <div class="stat-label">Total Kerugian</div>
                             <div class="stat-value negative"><?= format_currency($total_kerugian_global) ?></div>
-                            <div class="stat-footer"><?= $total_transaksi_kerugian ?> Transaksi</div>
+                            <div class="stat-footer">Nilai Terbaru per Investasi</div>
                         </div>
                     </div>
 
@@ -529,7 +575,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
                 </div>
             </section>
 
-            <!-- ✅ ASSET ALLOCATION -->
+             <!-- ✅ ASSET ALLOCATION -->
             <section class="asset-allocation-dashboard">
                 <div class="section-header-inline">
                     <h2 class="section-title">
@@ -973,13 +1019,19 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
         </div>
     </main>
 
-    <script>
+    <div class="version-badge">
+        <i class="fas fa-code"></i> v3.1.3 - Fixed Logic
+    </div>
+
+   <script>
+        // Loading Screen
         window.addEventListener('load', () => {
             setTimeout(() => {
                 document.getElementById('loadingScreen').classList.add('hide');
             }, 800);
         });
 
+        // Sidebar Toggle
         const sidebar = document.getElementById('sidebar');
         const mainContent = document.getElementById('mainContent');
         const sidebarToggle = document.getElementById('sidebarToggle');
@@ -1009,6 +1061,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
             }
         });
 
+        // Flash Message
         function closeFlash() {
             const flash = document.getElementById('flashMessage');
             if (flash) {
@@ -1019,6 +1072,7 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
 
         setTimeout(closeFlash, 5000);
 
+        // Refresh button animation
         document.querySelectorAll('.refresh-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 this.querySelector('i').style.animation = 'spin 1s linear';
@@ -1028,59 +1082,8 @@ $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM inves
             });
         });
 
-        document.querySelectorAll('.btn-recalculate').forEach(btn => {
-            btn.addEventListener('click', function(e) {
-                if (confirm('Recalculate semua investasi aktif?')) {
-                    this.querySelector('i').style.animation = 'spin 2s linear infinite';
-                    this.disabled = true;
-                    this.querySelector('span').textContent = 'Calculating...';
-                } else {
-                    e.preventDefault();
-                }
-            });
-        });
-
-        const statCards = document.querySelectorAll('.stat-card');
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach((entry, index) => {
-                if (entry.isIntersecting) {
-                    setTimeout(() => {
-                        entry.target.style.animation = 'fadeInUp 0.5s ease forwards';
-                    }, index * 50);
-                }
-            });
-        }, { threshold: 0.1 });
-
-        statCards.forEach(card => observer.observe(card));
-
-        document.querySelectorAll('.action-card, .btn-icon').forEach(button => {
-            button.addEventListener('click', function(e) {
-                const ripple = document.createElement('span');
-                ripple.classList.add('ripple');
-                this.appendChild(ripple);
-
-                const rect = this.getBoundingClientRect();
-                const size = Math.max(rect.width, rect.height);
-                const x = e.clientX - rect.left - size / 2;
-                const y = e.clientY - rect.top - size / 2;
-
-                ripple.style.width = ripple.style.height = size + 'px';
-                ripple.style.left = x + 'px';
-                ripple.style.top = y + 'px';
-
-                setTimeout(() => ripple.remove(), 600);
-            });
-        });
-
-        document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-                e.preventDefault();
-                toggleSidebar();
-            }
-        });
-
-        console.log('%c SAZEN v3.1.2 COMPLETE with Auto Calculate ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
-        console.log('%c ✅ All sections restored + Auto-calculate enabled ', 'color: #10b981; font-size: 12px; font-weight: bold;');
+        console.log('%c SAZEN Investment Manager v3.1.3 ', 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 16px; padding: 10px; border-radius: 5px;');
+        console.log('%c ✅ Fixed Logic: Keuntungan=Akumulatif | Kerugian=Terbaru ', 'color: #10b981; font-size: 12px; font-weight: bold;');
     </script>
 </body>
 </html>

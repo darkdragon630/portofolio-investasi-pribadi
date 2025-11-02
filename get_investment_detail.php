@@ -263,6 +263,8 @@ try {
  * Helper function to safely parse bukti file data
  * Handles both old format (filename|...) and new format (metadata|||base64)
  * 
+ * ⚠️ IMPORTANT: Returns ONLY metadata, NOT base64_data (to keep JSON response small)
+ * 
  * @param string|null $bukti_file Raw bukti file data from database
  * @param string $type Type: 'investasi', 'keuntungan', 'kerugian'
  * @param int $id Record ID
@@ -312,6 +314,7 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
                 'download_url' => "view_file.php?type=$type&id=$id&download=1",
                 'is_image' => in_array(strtolower($file_info['extension']), ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                 'is_pdf' => strtolower($file_info['extension']) === 'pdf'
+                // ⚠️ CRITICAL: DO NOT include 'base64_data' here to keep JSON response small
             ];
             
             error_log("    ✓ Parsed: " . $file_info['original_name'] . " (is_image: " . ($result['is_image'] ? 'YES' : 'NO') . ")");
@@ -337,6 +340,7 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
                 'download_url' => "view_file.php?type=$type&id=$id&download=1",
                 'is_image' => in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                 'is_pdf' => $extension === 'pdf'
+                // ⚠️ NO base64_data in old format either
             ];
             
             error_log("    ✓ Parsed (old format): " . $parts[1]);

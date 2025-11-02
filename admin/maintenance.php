@@ -19,31 +19,28 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// Include config files dengan error handling
-$config_loaded = false;
-try {
-    if (file_exists(__DIR__ . "/config/koneksi.php")) {
-        require_once __DIR__ . "/config/koneksi.php";
-    } elseif (file_exists(__DIR__ . "/koneksi.php")) {
-        require_once __DIR__ . "/koneksi.php";
-    } else {
-        throw new Exception("Database configuration file not found");
-    }
-    
-    if (file_exists(__DIR__ . "/config/maintenance_functions.php")) {
-        require_once __DIR__ . "/config/maintenance_functions.php";
-    } elseif (file_exists(__DIR__ . "/maintenance_functions.php")) {
-        require_once __DIR__ . "/maintenance_functions.php";
-    } else {
-        throw new Exception("Maintenance functions file not found");
-    }
-    
-    $config_loaded = true;
-    
-} catch (Exception $e) {
-    error_log("Failed to include config files: " . $e->getMessage());
-    die("System configuration error. Please contact administrator. Error: " . htmlspecialchars($e->getMessage()));
+// Include database connection from config folder (naik 1 level dari admin)
+$koneksi_file = __DIR__ . "/../config/koneksi.php";
+if (!file_exists($koneksi_file)) {
+    die("❌ Database configuration file not found at: " . $koneksi_file);
 }
+require_once $koneksi_file;
+
+// Check if connection variable exists
+if (!isset($koneksi) || $koneksi === null) {
+    die("❌ Database connection failed. Please check your koneksi.php file.");
+}
+
+$koneksi_loaded = true;
+
+// Include maintenance functions from config folder (naik 1 level dari admin)
+$functions_file = __DIR__ . "/../config/maintenance_functions.php";
+if (!file_exists($functions_file)) {
+    die("❌ Maintenance functions file not found at: " . $functions_file);
+}
+require_once $functions_file;
+
+$functions_loaded = true;
 
 $error = '';
 $success = '';
@@ -242,6 +239,31 @@ header('X-XSS-Protection: 1; mode=block');
         }
         .divider::before { left: 0; }
         .divider::after { right: 0; }
+        .debug-info {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+        }
+        .debug-info h4 {
+            margin-bottom: 10px;
+            color: #856404;
+        }
+        .debug-info ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .debug-info li {
+            padding: 5px 0;
+        }
+        .debug-info .check {
+            color: #28a745;
+        }
+        .debug-info .cross {
+            color: #dc3545;
+        }
         @media (max-width: 768px) {
             .container { margin: 10px; }
             .content { padding: 20px; }
@@ -258,6 +280,31 @@ header('X-XSS-Protection: 1; mode=block');
         </div>
 
         <div class="content">
+            <!-- Debug Info -->
+            <div class="debug-info">
+                <h4><i class="fas fa-info-circle"></i> System Status</h4>
+                <ul>
+                    <li>
+                        <span class="<?php echo $koneksi_loaded ? 'check' : 'cross'; ?>">
+                            <?php echo $koneksi_loaded ? '✓' : '✗'; ?>
+                        </span>
+                        Database Connection: <?php echo $koneksi_loaded ? 'Connected' : 'Failed'; ?>
+                    </li>
+                    <li>
+                        <span class="<?php echo $functions_loaded ? 'check' : 'cross'; ?>">
+                            <?php echo $functions_loaded ? '✓' : '✗'; ?>
+                        </span>
+                        Maintenance Functions: <?php echo $functions_loaded ? 'Loaded' : 'Failed'; ?>
+                    </li>
+                    <li>
+                        <span class="<?php echo isset($koneksi) ? 'check' : 'cross'; ?>">
+                            <?php echo isset($koneksi) ? '✓' : '✗'; ?>
+                        </span>
+                        PDO Object: <?php echo isset($koneksi) ? 'Available' : 'Not Available'; ?>
+                    </li>
+                </ul>
+            </div>
+
             <?php if (!empty($error)): ?>
                 <div class="alert alert-error">
                     <i class="fas fa-exclamation-circle"></i>

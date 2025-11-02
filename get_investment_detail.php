@@ -9,8 +9,11 @@
  * 3. Detect and log corrupt data
  * 4. Prevent premature script termination
  */
-
 require_once 'config/koneksi.php';
+require_once "config/maintenance_functions.php";
+
+// Check maintenance mode and serve maintenance page if active
+serve_maintenance_page_if_active();
 
 // CRITICAL: Prevent ANY output before JSON
 ob_start();

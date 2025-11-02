@@ -3,17 +3,25 @@
  * SAZEN - Maintenance System (Database Based)
  */
 
-session_start();
+// Start session dengan error handling
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-// Authentication Check - hanya user yang login bisa akses (TIDAK DIUBAH)
+// Authentication Check - hanya user yang login bisa akses
 if (!isset($_SESSION['user_id'])) {
     header("Location: auth.php");
     exit;
 }
 
-// Include config files
-require_once "config/koneksi.php";
-require_once "config/maintenance_functions.php";
+// Include config files dengan error handling
+try {
+    require_once "config/koneksi.php";
+    require_once "config/maintenance_functions.php";
+} catch (Exception $e) {
+    error_log("Failed to include config files: " . $e->getMessage());
+    die("System configuration error. Please contact administrator.");
+}
 
 $error = '';
 $success = '';
@@ -31,7 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception("File terlalu besar. Maksimal 5MB");
                 }
                 
-                if (pathinfo($file['name'], PATHINFO_EXTENSION) !== 'html') {
+                $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                if ($fileExtension !== 'html') {
                     throw new Exception("File harus berupa HTML (.html)");
                 }
                 
@@ -48,10 +57,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($result['success']) {
                     $success = "✅ Maintenance mode diaktifkan! HTML disimpan di database.";
                 } else {
-                    throw new Exception($result['error']);
+                    throw new Exception($result['error'] ?? "Unknown error occurred");
                 }
             } else {
-                throw new Exception("Silakan pilih file HTML untuk diupload");
+                $uploadError = $_FILES['maintenance_file']['error'] ?? 'Unknown';
+                throw new Exception("Silakan pilih file HTML untuk diupload (Error: $uploadError)");
             }
         } 
         elseif (isset($_POST['disable_maintenance'])) {
@@ -61,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if ($result['success']) {
                 $success = "✅ Maintenance mode dimatikan!";
             } else {
-                throw new Exception($result['error']);
+                throw new Exception($result['error'] ?? "Unknown error occurred");
             }
         }
         elseif (isset($_POST['use_default'])) {
@@ -72,16 +82,32 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if ($result['success']) {
                 $success = "✅ Maintenance mode diaktifkan dengan template default!";
             } else {
-                throw new Exception($result['error']);
+                throw new Exception($result['error'] ?? "Unknown error occurred");
             }
         }
         
     } catch (Exception $e) {
+        error_log("Maintenance system error: " . $e->getMessage());
         $error = '❌ ' . $e->getMessage();
     }
 }
 
-$status = get_maintenance_status_db();
+// Get maintenance status dengan error handling
+try {
+    $status = get_maintenance_status_db();
+    if (!is_array($status)) {
+        throw new Exception("Invalid maintenance status data");
+    }
+} catch (Exception $e) {
+    error_log("Failed to get maintenance status: " . $e->getMessage());
+    $status = ['is_active' => false, 'activated_at' => null, 'maintenance_html' => ''];
+    $error = '❌ Gagal memuat status maintenance: ' . $e->getMessage();
+}
+
+// Security headers
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('X-XSS-Protection: 1; mode=block');
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -139,6 +165,10 @@ $status = get_maintenance_status_db();
             text-align: center; 
         }
         .action-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+        .preview-area { 
+            margin-top: 20px; padding: 15px; background: #f8f9fa; 
+            border-radius: 8px; border: 1px solid #dee2e6;
+        }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -150,32 +180,32 @@ $status = get_maintenance_status_db();
         </div>
 
         <div class="content">
-            <?php if ($error): ?>
+            <?php if (!empty($error)): ?>
                 <div class="alert alert-error">
                     <i class="fas fa-exclamation-circle"></i><?= htmlspecialchars($error) ?>
                 </div>
             <?php endif; ?>
 
-            <?php if ($success): ?>
+            <?php if (!empty($success)): ?>
                 <div class="alert alert-success">
                     <i class="fas fa-check-circle"></i><?= htmlspecialchars($success) ?>
                 </div>
             <?php endif; ?>
 
-            <div class="status-card <?= $status['is_active'] ? 'status-active' : '' ?>">
+            <div class="status-card <?= isset($status['is_active']) && $status['is_active'] ? 'status-active' : '' ?>">
                 <h3>Status Maintenance</h3>
                 <p><strong>Mode:</strong> 
-                    <?= $status['is_active'] ? 
+                    <?= (isset($status['is_active']) && $status['is_active']) ? 
                         '<span style="color: #dc3545;">🟢 AKTIF</span>' : 
                         '<span style="color: #28a745;">🔴 NON-AKTIF</span>' ?>
                 </p>
-                <?php if ($status['is_active'] && $status['activated_at']): ?>
-                    <p><strong>Diaktifkan:</strong> <?= $status['activated_at'] ?></p>
+                <?php if (isset($status['is_active']) && $status['is_active'] && !empty($status['activated_at'])): ?>
+                    <p><strong>Diaktifkan:</strong> <?= htmlspecialchars($status['activated_at']) ?></p>
                     <p><strong>HTML Size:</strong> <?= strlen($status['maintenance_html'] ?? '') ?> bytes</p>
                 <?php endif; ?>
             </div>
 
-            <?php if (!$status['is_active']): ?>
+            <?php if (!isset($status['is_active']) || !$status['is_active']): ?>
                 <div class="form-group">
                     <h3><i class="fas fa-power-off"></i> Aktifkan Maintenance Mode</h3>
                     
@@ -214,7 +244,7 @@ $status = get_maintenance_status_db();
                     </form>
                     
                     <?php if (!empty($status['maintenance_html'])): ?>
-                    <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <div class="preview-area">
                         <h4><i class="fas fa-eye"></i> Preview HTML</h4>
                         <textarea class="form-control" rows="6" readonly style="font-family: monospace; font-size: 0.8em;">
 <?= htmlspecialchars(substr($status['maintenance_html'], 0, 500)) . '...' ?>

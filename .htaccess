@@ -18,28 +18,6 @@ DirectoryIndex index.php index.html
 Options -Indexes
 
 # ===================================
-# ===================================
-# MAINTENANCE MODE
-# ===================================
-
-# Maintenance mode - hanya aktif jika file maintenance/index.html ada
-RewriteCond %{REQUEST_URI} !^/maintenance\.php
-RewriteCond %{REQUEST_URI} !^/auth\.php
-RewriteCond %{REQUEST_URI} !^/css/
-RewriteCond %{REQUEST_URI} !^/js/
-RewriteCond %{REQUEST_URI} !^/images/
-RewriteCond %{REQUEST_URI} !^/uploads/
-RewriteCond %{REQUEST_URI} !^/maintenance/
-RewriteCond %{DOCUMENT_ROOT}/maintenance/index.html -f
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteRule ^(.*)$ /maintenance/index.html [L,R=503]
-
-# Custom header for maintenance mode
-<IfModule mod_headers.c>
-    <Files "maintenance/index.html">
-        Header set Retry-After "3600"
-    </Files>
-</IfModule>
 
 # ===================================
 # HTTPS & WWW REDIRECT

@@ -270,7 +270,7 @@ function get_default_maintenance_html() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maintenance - SAZEN Investment</title>
+    <title>Maintenance - LUMINARK HOLDINGS</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -348,7 +348,7 @@ function get_default_maintenance_html() {
         <h1>Sedang Dalam Pemeliharaan</h1>
         
         <div class="message">
-            <p>SAZEN Investment Portfolio Manager sedang dalam proses pemeliharaan untuk peningkatan sistem.</p>
+            <p>LUMINARK HOLDINGS Portfolio Manager sedang dalam proses pemeliharaan untuk peningkatan sistem.</p>
             <p>Kami akan segera kembali online dalam waktu singkat.</p>
         </div>
 
@@ -364,7 +364,7 @@ function get_default_maintenance_html() {
         </div>
 
         <div class="footer">
-            <strong>SAZEN v3.1</strong><br>
+            <strong>LUMINARK HOLDINGS v3.1</strong><br>
             Investment Portfolio Management System
         </div>
     </div>

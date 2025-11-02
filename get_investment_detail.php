@@ -13,6 +13,9 @@ header('Content-Type: application/json; charset=utf-8');
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
+// Increase memory limit for large files
+ini_set('memory_limit', '256M');
+
 // Start output buffering to catch any accidental output
 ob_start();
 
@@ -68,6 +71,10 @@ try {
     }
 
     error_log("✓ Investment found: " . $investment['judul_investasi']);
+    error_log("  Status: " . ($investment['status'] ?? 'NULL'));
+    error_log("  bukti_file type: " . gettype($investment['bukti_file']));
+    error_log("  bukti_file is_null: " . (is_null($investment['bukti_file']) ? 'YES' : 'NO'));
+    error_log("  bukti_file length: " . (is_string($investment['bukti_file']) ? strlen($investment['bukti_file']) : 'N/A'));
     
     // Parse investment bukti file using helper function
     $bukti_data = get_safe_bukti_data($investment['bukti_file'], 'investasi', $investment['id']);
@@ -214,11 +221,24 @@ try {
     // Clear any accidental output
     ob_end_clean();
     
-    // Success response
-    echo json_encode([
+    // Add debug info in response (only in development)
+    $debug_mode = false; // Set to true to enable debug output
+    
+    $response = [
         'success' => true,
         'investment' => $response_data
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ];
+    
+    if ($debug_mode) {
+        $response['_debug'] = [
+            'php_version' => PHP_VERSION,
+            'time' => date('Y-m-d H:i:s'),
+            'memory_usage' => memory_get_usage(true)
+        ];
+    }
+    
+    // Success response with proper encoding
+    echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     
 } catch (Exception $e) {
     // Log error
@@ -254,12 +274,26 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
         return null;
     }
     
-    error_log("  → Parsing bukti for $type ID $id (length: " . strlen($bukti_file) . ")");
+    error_log("  → Parsing bukti for $type ID $id");
+    error_log("    Data type: " . gettype($bukti_file));
+    error_log("    Is string: " . (is_string($bukti_file) ? 'YES' : 'NO'));
+    error_log("    Length: " . (is_string($bukti_file) ? strlen($bukti_file) : 'N/A'));
     
     try {
+        // LONGBLOB might be returned as resource or string depending on PDO fetch mode
+        // Convert to string if it's a resource
+        if (is_resource($bukti_file)) {
+            error_log("    → Converting resource to string");
+            $bukti_file = stream_get_contents($bukti_file);
+        }
+        
+        // Check if it's binary data (starts with JSON metadata)
+        $first_100_chars = substr($bukti_file, 0, 100);
+        error_log("    First 100 chars: " . bin2hex($first_100_chars));
+        
         // Try new format first (metadata|||base64)
         if (strpos($bukti_file, '|||') !== false) {
-            error_log("    Detected new format (metadata|||base64)");
+            error_log("    → Detected new format (metadata|||base64)");
             $file_info = parse_bukti_file($bukti_file);
             
             if (!$file_info) {
@@ -285,8 +319,9 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
         }
         
         // Try old format (filename|original_name|size|mime_type|timestamp)
-        error_log("    Detected old format (pipe-separated)");
+        error_log("    → Trying old format (pipe-separated)");
         $parts = explode('|', $bukti_file);
+        error_log("    → Parts count: " . count($parts));
         
         if (count($parts) >= 5) {
             $extension = strtolower(pathinfo($parts[1], PATHINFO_EXTENSION));
@@ -308,11 +343,12 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
             return $result;
         }
         
-        error_log("    ✗ Unknown format (not enough parts: " . count($parts) . ")");
+        error_log("    ✗ Unknown format");
         return null;
         
     } catch (Exception $e) {
         error_log("    ✗ Exception parsing bukti: " . $e->getMessage());
+        error_log("    ✗ Stack: " . $e->getTraceAsString());
         return null;
     }
 }

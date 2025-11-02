@@ -60,11 +60,21 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
     Allow from all
 </Files>
 
-# Block access to config folder
-<DirectoryMatch "^.*/config(/|$)">
-    Order deny,allow
-    Deny from all
-</DirectoryMatch>
+# Protect config folder from HTTP access only
+<Directory "config">
+    # Deny HTTP access
+    <FilesMatch "\.(php|inc)$">
+        Order deny,allow
+        Deny from all
+        # Allow from 127.0.0.1 for localhost testing
+    </FilesMatch>
+</Directory>
+
+# Hapus atau comment out DirectoryMatch yang lama
+# <DirectoryMatch "^.*/config(/|$)">
+#     Order deny,allow
+#     Deny from all
+# </DirectoryMatch>
 
 # Block access to maintenance folder (except for maintenance page)
 <DirectoryMatch "^.*/maintenance(/|$)">

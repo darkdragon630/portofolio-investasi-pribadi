@@ -1,4 +1,16 @@
 <?php
+/**
+ * MAINTENANCE MODE CHECKER
+ */
+// Include maintenance functions
+if (file_exists(__DIR__ . '/config/maintenance_functions.php')) {
+    require_once __DIR__ . '/config/maintenance_functions.php';
+    
+    // Check maintenance status dan serve maintenance page jika aktif
+    serve_maintenance_page_if_active();
+}
+
+// Jika tidak maintenance, lanjutkan ke koneksi database
 require_once 'config/koneksi.php';
 
 /* ========================================

@@ -9,8 +9,8 @@ require_once "config/koneksi.php";
 require_once "config/functions.php";
 
 // Authentication Check - hanya admin yang bisa akses
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'admin') {
-    header("Location: auth.php");
+if (!isset($_SESSION['user_id'])) {
+    header("Location: admin/auth.php");
     exit;
 }
 

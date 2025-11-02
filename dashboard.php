@@ -235,6 +235,43 @@ $kerugian_list = $koneksi->query("
 ")->fetchAll();
 
 $last_update = $koneksi->query("SELECT MAX(updated_at) as last_update FROM investasi WHERE status = 'aktif'")->fetchColumn();
+
+//test fitur
+$alerts = get_investment_alerts($koneksi);
+
+foreach ($alerts as $alert) {
+    $icon = [
+        'danger' => '🔴',
+        'warning' => '🟡',
+        'success' => '🟢'
+    ][$alert['type']];
+    
+    echo "<div class='alert alert-{$alert['type']}'>";
+    echo "$icon <strong>{$alert['judul']}</strong><br>";
+    echo "{$alert['message']}<br>";
+    echo "<small>Action: {$alert['action']}</small>";
+    echo "</div>";
+}
+
+// Get data
+$history = get_daily_snapshot_history($koneksi, $investasi_id, 30);
+
+// Prepare for Chart.js
+$labels = array_column($history, 'tanggal_snapshot');
+$values = array_column($history, 'nilai_akhir');
+$changes = array_column($history, 'perubahan_nilai');
+echo "<script>
+const chartData = {
+    labels: " . json_encode(array_reverse($labels)) . ",
+    datasets: [{
+        label: 'Nilai Investasi',
+        data: " . json_encode(array_reverse($values)) . ",
+        borderColor: 'rgb(75, 192, 192)',
+        tension: 0.1
+    }]
+};
+// Render chart...
+</script>";
 ?>
 <!DOCTYPE html>
 <html lang="id">

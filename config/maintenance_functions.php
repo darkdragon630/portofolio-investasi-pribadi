@@ -417,4 +417,514 @@ function get_maintenance_stats() {
         return ['total_activations' => 0, 'currently_active' => 0, 'last_activation' => null];
     }
 }
+
+/**
+ * Clean old snapshots (keep last N days only)
+ * Should be run monthly via cron or manually
+ * 
+ * @param PDO $koneksi Database connection
+ * @param int $keep_days Number of days to keep
+ * @return int Number of deleted records
+ */
+function cleanup_old_snapshots($koneksi, $keep_days = 90) {
+    try {
+        if (!$koneksi) {
+            throw new Exception("Database connection not available");
+        }
+        
+        $cutoff_date = date('Y-m-d', strtotime("-$keep_days days"));
+        
+        $sql = "DELETE FROM investasi_snapshot_harian 
+                WHERE tanggal_snapshot < ?";
+        $stmt = $koneksi->prepare($sql);
+        $stmt->execute([$cutoff_date]);
+        
+        $deleted = $stmt->rowCount();
+        error_log("Cleanup: Deleted $deleted old snapshot records (older than $cutoff_date)");
+        
+        return $deleted;
+        
+    } catch (Exception $e) {
+        error_log("Cleanup Snapshots Error: " . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Initialize snapshots for existing investments
+ * Run once after database migration or for investments without snapshots
+ * 
+ * @param PDO $koneksi Database connection
+ * @return array Result
+ */
+function initialize_snapshots_for_existing_investments($koneksi) {
+    try {
+        if (!$koneksi) {
+            throw new Exception("Database connection not available");
+        }
+        
+        $sql = "SELECT id FROM investasi WHERE status = 'aktif'";
+        $stmt = $koneksi->query($sql);
+        $investments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $initialized = 0;
+        foreach ($investments as $inv) {
+            // Call auto_recalculate_investment from auto_calculate_investment.php
+            if (function_exists('auto_recalculate_investment')) {
+                $result = auto_recalculate_investment($koneksi, $inv['id']);
+                if ($result['success']) {
+                    $initialized++;
+                }
+            } else {
+                error_log("Function auto_recalculate_investment not found");
+                break;
+            }
+        }
+        
+        return [
+            'success' => true,
+            'initialized' => $initialized,
+            'total' => count($investments)
+        ];
+        
+    } catch (Exception $e) {
+        error_log("Initialize Snapshots Error: " . $e->getMessage());
+        return [
+            'success' => false,
+            'error' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Create database backup (export to SQL)
+ * 
+ * @param PDO $koneksi Database connection
+ * @return array Result with SQL content
+ */
+function create_database_backup($koneksi) {
+    try {
+        if (!$koneksi) {
+            throw new Exception("Database connection not available");
+        }
+        
+        $dbname = DB_NAME;
+        $backup_content = "-- SAZEN Investment Portfolio Backup\n";
+        $backup_content .= "-- Generated: " . date('Y-m-d H:i:s') . "\n";
+        $backup_content .= "-- Database: $dbname\n\n";
+        $backup_content .= "SET SQL_MODE = \"NO_AUTO_VALUE_ON_ZERO\";\n";
+        $backup_content .= "SET time_zone = \"+00:00\";\n\n";
+        
+        // Tables to backup
+        $tables = [
+            'kategori',
+            'investasi',
+            'keuntungan_investasi',
+            'kerugian_investasi',
+            'cash_balance',
+            'investasi_snapshot_harian',
+            'maintenance_mode',
+            'system_notifications'
+        ];
+        
+        foreach ($tables as $table) {
+            // Check if table exists
+            $check = $koneksi->query("SHOW TABLES LIKE '$table'");
+            if ($check->rowCount() == 0) {
+                continue; // Skip if table doesn't exist
+            }
+            
+            $backup_content .= "\n-- Table: $table\n";
+            $backup_content .= "DROP TABLE IF EXISTS `$table`;\n";
+            
+            // Get CREATE TABLE statement
+            $create = $koneksi->query("SHOW CREATE TABLE `$table`")->fetch();
+            $backup_content .= $create['Create Table'] . ";\n\n";
+            
+            // Get table data
+            $rows = $koneksi->query("SELECT * FROM `$table`")->fetchAll(PDO::FETCH_ASSOC);
+            
+            if (count($rows) > 0) {
+                $backup_content .= "INSERT INTO `$table` VALUES\n";
+                $values = [];
+                
+                foreach ($rows as $row) {
+                    $vals = [];
+                    foreach ($row as $val) {
+                        if ($val === null) {
+                            $vals[] = 'NULL';
+                        } else {
+                            $vals[] = "'" . addslashes($val) . "'";
+                        }
+                    }
+                    $values[] = '(' . implode(', ', $vals) . ')';
+                }
+                
+                $backup_content .= implode(",\n", $values) . ";\n\n";
+            }
+        }
+        
+        $filename = 'sazen_backup_' . date('Y-m-d_His') . '.sql';
+        
+        return [
+            'success' => true,
+            'filename' => $filename,
+            'sql_content' => $backup_content
+        ];
+        
+    } catch (Exception $e) {
+        error_log("Database Backup Error: " . $e->getMessage());
+        return [
+            'success' => false,
+            'error' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Run system health check
+ * 
+ * @param PDO $koneksi Database connection
+ * @return array Health check results
+ */
+function run_system_health_check($koneksi) {
+    $checks = [];
+    
+    // Check 1: Database Connection
+    try {
+        if ($koneksi && $koneksi->query("SELECT 1")->fetchColumn() == 1) {
+            $checks[] = [
+                'name' => 'Database Connection',
+                'status' => 'OK',
+                'message' => 'Database connected successfully'
+            ];
+        }
+    } catch (Exception $e) {
+        $checks[] = [
+            'name' => 'Database Connection',
+            'status' => 'ERROR',
+            'message' => 'Failed to connect: ' . $e->getMessage()
+        ];
+    }
+    
+    // Check 2: Required Tables
+    $required_tables = ['investasi', 'keuntungan_investasi', 'kerugian_investasi', 'kategori', 'cash_balance'];
+    $missing_tables = [];
+    
+    foreach ($required_tables as $table) {
+        $result = $koneksi->query("SHOW TABLES LIKE '$table'");
+        if ($result->rowCount() == 0) {
+            $missing_tables[] = $table;
+        }
+    }
+    
+    if (empty($missing_tables)) {
+        $checks[] = [
+            'name' => 'Database Tables',
+            'status' => 'OK',
+            'message' => 'All required tables exist'
+        ];
+    } else {
+        $checks[] = [
+            'name' => 'Database Tables',
+            'status' => 'ERROR',
+            'message' => 'Missing tables: ' . implode(', ', $missing_tables)
+        ];
+    }
+    
+    // Check 3: Disk Space (if possible)
+    $disk_free = @disk_free_space(__DIR__);
+    $disk_total = @disk_total_space(__DIR__);
+    
+    if ($disk_free && $disk_total) {
+        $disk_percent = ($disk_free / $disk_total) * 100;
+        
+        if ($disk_percent > 20) {
+            $checks[] = [
+                'name' => 'Disk Space',
+                'status' => 'OK',
+                'message' => number_format($disk_percent, 1) . '% free (' . format_bytes($disk_free) . ')'
+            ];
+        } elseif ($disk_percent > 10) {
+            $checks[] = [
+                'name' => 'Disk Space',
+                'status' => 'WARNING',
+                'message' => 'Low disk space: ' . number_format($disk_percent, 1) . '% free'
+            ];
+        } else {
+            $checks[] = [
+                'name' => 'Disk Space',
+                'status' => 'ERROR',
+                'message' => 'Critical: Only ' . number_format($disk_percent, 1) . '% free'
+            ];
+        }
+    }
+    
+    // Check 4: PHP Version
+    $php_version = PHP_VERSION;
+    if (version_compare($php_version, '7.4.0', '>=')) {
+        $checks[] = [
+            'name' => 'PHP Version',
+            'status' => 'OK',
+            'message' => 'PHP ' . $php_version
+        ];
+    } else {
+        $checks[] = [
+            'name' => 'PHP Version',
+            'status' => 'WARNING',
+            'message' => 'PHP ' . $php_version . ' (recommended 7.4+)'
+        ];
+    }
+    
+    // Check 5: Data Integrity
+    try {
+        $orphaned = $koneksi->query("
+            SELECT COUNT(*) as count 
+            FROM keuntungan_investasi k 
+            LEFT JOIN investasi i ON k.investasi_id = i.id 
+            WHERE i.id IS NULL
+        ")->fetchColumn();
+        
+        if ($orphaned == 0) {
+            $checks[] = [
+                'name' => 'Data Integrity',
+                'status' => 'OK',
+                'message' => 'No orphaned records found'
+            ];
+        } else {
+            $checks[] = [
+                'name' => 'Data Integrity',
+                'status' => 'WARNING',
+                'message' => $orphaned . ' orphaned keuntungan records found'
+            ];
+        }
+    } catch (Exception $e) {
+        $checks[] = [
+            'name' => 'Data Integrity',
+            'status' => 'ERROR',
+            'message' => 'Failed to check: ' . $e->getMessage()
+        ];
+    }
+    
+    // Check 6: Storage Directory
+    $storage_dir = __DIR__ . '/../storage/json/';
+    if (is_dir($storage_dir) && is_writable($storage_dir)) {
+        $checks[] = [
+            'name' => 'Storage Directory',
+            'status' => 'OK',
+            'message' => 'Writable and accessible'
+        ];
+    } else {
+        $checks[] = [
+            'name' => 'Storage Directory',
+            'status' => 'ERROR',
+            'message' => 'Not writable or missing'
+        ];
+    }
+    
+    // Overall status
+    $has_error = false;
+    $has_warning = false;
+    
+    foreach ($checks as $check) {
+        if ($check['status'] === 'ERROR') $has_error = true;
+        if ($check['status'] === 'WARNING') $has_warning = true;
+    }
+    
+    $overall_status = $has_error ? 'CRITICAL' : ($has_warning ? 'WARNING' : 'HEALTHY');
+    
+    return [
+        'checks' => $checks,
+        'overall_status' => $overall_status,
+        'timestamp' => date('Y-m-d H:i:s')
+    ];
+}
+
+/**
+ * Validate and repair data inconsistencies
+ * 
+ * @param PDO $koneksi Database connection
+ * @return array Validation results
+ */
+function validate_and_repair_data($koneksi) {
+    $issues_found = 0;
+    $fixed = 0;
+    $skipped = 0;
+    $details = [];
+    
+    try {
+        // Issue 1: Orphaned keuntungan records
+        $orphaned_keuntungan = $koneksi->query("
+            SELECT k.id FROM keuntungan_investasi k 
+            LEFT JOIN investasi i ON k.investasi_id = i.id 
+            WHERE i.id IS NULL
+        ")->fetchAll();
+        
+        $issues_found += count($orphaned_keuntungan);
+        if (count($orphaned_keuntungan) > 0) {
+            $ids = array_column($orphaned_keuntungan, 'id');
+            $koneksi->exec("DELETE FROM keuntungan_investasi WHERE id IN (" . implode(',', $ids) . ")");
+            $fixed += count($orphaned_keuntungan);
+            $details[] = "Deleted " . count($orphaned_keuntungan) . " orphaned keuntungan records";
+        }
+        
+        // Issue 2: Orphaned kerugian records
+        $orphaned_kerugian = $koneksi->query("
+            SELECT k.id FROM kerugian_investasi k 
+            LEFT JOIN investasi i ON k.investasi_id = i.id 
+            WHERE i.id IS NULL
+        ")->fetchAll();
+        
+        $issues_found += count($orphaned_kerugian);
+        if (count($orphaned_kerugian) > 0) {
+            $ids = array_column($orphaned_kerugian, 'id');
+            $koneksi->exec("DELETE FROM kerugian_investasi WHERE id IN (" . implode(',', $ids) . ")");
+            $fixed += count($orphaned_kerugian);
+            $details[] = "Deleted " . count($orphaned_kerugian) . " orphaned kerugian records";
+        }
+        
+        // Issue 3: Invalid investment status
+        $invalid_status = $koneksi->query("
+            SELECT COUNT(*) FROM investasi 
+            WHERE status NOT IN ('aktif', 'terjual', 'rugi_total', 'ditutup')
+        ")->fetchColumn();
+        
+        $issues_found += $invalid_status;
+        if ($invalid_status > 0) {
+            $koneksi->exec("UPDATE investasi SET status = 'aktif' WHERE status NOT IN ('aktif', 'terjual', 'rugi_total', 'ditutup')");
+            $fixed += $invalid_status;
+            $details[] = "Fixed $invalid_status invalid status to 'aktif'";
+        }
+        
+        // Issue 4: Negative investment amounts
+        $negative_amounts = $koneksi->query("
+            SELECT COUNT(*) FROM investasi WHERE jumlah < 0
+        ")->fetchColumn();
+        
+        $issues_found += $negative_amounts;
+        if ($negative_amounts > 0) {
+            $details[] = "Found $negative_amounts investments with negative amounts (manual review needed)";
+            $skipped += $negative_amounts;
+        }
+        
+        // Issue 5: Investasi without kategori
+        $no_category = $koneksi->query("
+            SELECT COUNT(*) FROM investasi 
+            WHERE kategori_id IS NULL OR kategori_id NOT IN (SELECT id FROM kategori)
+        ")->fetchColumn();
+        
+        $issues_found += $no_category;
+        if ($no_category > 0) {
+            $details[] = "Found $no_category investments without valid category (manual review needed)";
+            $skipped += $no_category;
+        }
+        
+    } catch (Exception $e) {
+        error_log("Data Validation Error: " . $e->getMessage());
+        $details[] = "Error during validation: " . $e->getMessage();
+    }
+    
+    return [
+        'issues_found' => $issues_found,
+        'fixed' => $fixed,
+        'skipped' => $skipped,
+        'details' => $details
+    ];
+}
+
+/**
+ * Get notification settings
+ * 
+ * @param PDO $koneksi Database connection
+ * @return array Settings
+ */
+function get_notification_settings($koneksi) {
+    try {
+        // Ensure table exists
+        $koneksi->exec("CREATE TABLE IF NOT EXISTS system_notifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            email_enabled TINYINT(1) DEFAULT 0,
+            email_address VARCHAR(255) DEFAULT '',
+            notify_maintenance TINYINT(1) DEFAULT 1,
+            notify_errors TINYINT(1) DEFAULT 1,
+            notify_backup TINYINT(1) DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        
+        $stmt = $koneksi->query("SELECT * FROM system_notifications ORDER BY id DESC LIMIT 1");
+        $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$settings) {
+            return [
+                'email_enabled' => 0,
+                'email_address' => '',
+                'notify_maintenance' => 1,
+                'notify_errors' => 1,
+                'notify_backup' => 1
+            ];
+        }
+        
+        return $settings;
+        
+    } catch (Exception $e) {
+        error_log("Get Notification Settings Error: " . $e->getMessage());
+        return [
+            'email_enabled' => 0,
+            'email_address' => '',
+            'notify_maintenance' => 1,
+            'notify_errors' => 1,
+            'notify_backup' => 1
+        ];
+    }
+}
+
+/**
+ * Save notification settings
+ * 
+ * @param PDO $koneksi Database connection
+ * @param array $settings Settings to save
+ * @return array Result
+ */
+function save_notification_settings($koneksi, $settings) {
+    try {
+        // Delete old settings
+        $koneksi->exec("DELETE FROM system_notifications");
+        
+        // Insert new settings
+        $sql = "INSERT INTO system_notifications 
+                (email_enabled, email_address, notify_maintenance, notify_errors, notify_backup) 
+                VALUES (?, ?, ?, ?, ?)";
+        
+        $stmt = $koneksi->prepare($sql);
+        $stmt->execute([
+            $settings['email_enabled'],
+            $settings['email_address'],
+            $settings['notify_maintenance'],
+            $settings['notify_errors'],
+            $settings['notify_backup']
+        ]);
+        
+        return ['success' => true];
+        
+    } catch (Exception $e) {
+        error_log("Save Notification Settings Error: " . $e->getMessage());
+        return [
+            'success' => false,
+            'error' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Format bytes to human readable
+ */
+function format_bytes($bytes) {
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $bytes = max($bytes, 0);
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+    $bytes /= (1 << (10 * $pow));
+    return round($bytes, 2) . ' ' . $units[$pow];
+}
 ?>

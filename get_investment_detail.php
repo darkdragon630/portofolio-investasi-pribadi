@@ -89,7 +89,12 @@ try {
     }
     
     // Parse investment bukti file using helper function
-    $bukti_data = get_safe_bukti_data($investment['bukti_file'], 'investasi', $investment['id']);
+    try {
+        $bukti_data = get_safe_bukti_data($investment['bukti_file'], 'investasi', $investment['id']);
+    } catch (Exception $e) {
+        error_log("  ⚠ Warning parsing investasi bukti: " . $e->getMessage());
+        $bukti_data = null; // Continue without bukti
+    }
     
     // Get all keuntungan for this investment
     $sql_keuntungan = "
@@ -185,7 +190,12 @@ try {
     
     // Format keuntungan with bukti data
     foreach ($keuntungan_list as $k) {
-        $keuntungan_bukti = get_safe_bukti_data($k['bukti_file'], 'keuntungan', $k['id']);
+        try {
+            $keuntungan_bukti = get_safe_bukti_data($k['bukti_file'], 'keuntungan', $k['id']);
+        } catch (Exception $e) {
+            error_log("  ⚠ Warning parsing keuntungan bukti ID " . $k['id'] . ": " . $e->getMessage());
+            $keuntungan_bukti = null;
+        }
         
         $response_data['keuntungan'][] = [
             'id' => (int)$k['id'],
@@ -207,7 +217,12 @@ try {
     
     // Format kerugian terbaru
     if ($kerugian_terbaru) {
-        $kerugian_bukti = get_safe_bukti_data($kerugian_terbaru['bukti_file'], 'kerugian', $kerugian_terbaru['id']);
+        try {
+            $kerugian_bukti = get_safe_bukti_data($kerugian_terbaru['bukti_file'], 'kerugian', $kerugian_terbaru['id']);
+        } catch (Exception $e) {
+            error_log("  ⚠ Warning parsing kerugian bukti: " . $e->getMessage());
+            $kerugian_bukti = null;
+        }
         
         $response_data['kerugian_terbaru'] = [
             'id' => (int)$kerugian_terbaru['id'],
@@ -229,17 +244,31 @@ try {
     
     error_log("✓ Response prepared successfully");
     
-    // CRITICAL FIX: Test JSON encoding BEFORE output
+    // CRITICAL FIX: Clean UTF-8 encoding before JSON output
+    $response_data = utf8_clean_recursive($response_data);
+    
     $response = [
         'success' => true,
         'investment' => $response_data
     ];
     
-    $json_test = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    // Use JSON_INVALID_UTF8_SUBSTITUTE to handle invalid UTF-8
+    $json_flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE;
+    $json_test = json_encode($response, $json_flags);
     
     if ($json_test === false) {
         $json_error = json_last_error_msg();
         error_log("✗ JSON ENCODING FAILED: " . $json_error);
+        
+        // Try again with partial object encoding to identify problematic field
+        error_log("  Testing investment fields individually:");
+        foreach ($response_data as $key => $value) {
+            $test = json_encode([$key => $value], $json_flags);
+            if ($test === false) {
+                error_log("  ✗ Field '$key' failed: " . json_last_error_msg());
+            }
+        }
+        
         throw new Exception("JSON encoding failed: " . $json_error);
     }
     
@@ -300,6 +329,44 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
             $bukti_file = stream_get_contents($bukti_file);
         }
         
+        // CRITICAL FIX: Detect raw binary data (old bug)
+        $first_bytes = substr($bukti_file, 0, 4);
+        $is_jpeg = (bin2hex($first_bytes) === 'ffd8ffe0' || bin2hex($first_bytes) === 'ffd8ffe1');
+        $is_png = (bin2hex($first_bytes) === '89504e47');
+        $is_pdf = (substr($bukti_file, 0, 4) === '%PDF');
+        
+        if ($is_jpeg || $is_png || $is_pdf) {
+            error_log("    ⚠ WARNING: Raw binary file detected (old format bug)");
+            error_log("    → Skipping binary data, using fallback metadata");
+            
+            // Return minimal metadata without binary data
+            $size = strlen($bukti_file);
+            $ext = $is_jpeg ? 'jpeg' : ($is_png ? 'png' : 'pdf');
+            $mime = $is_jpeg ? 'image/jpeg' : ($is_png ? 'image/png' : 'application/pdf');
+            
+            return [
+                'original_name' => "file_$type" . "_$id.$ext",
+                'extension' => $ext,
+                'size' => $size,
+                'size_formatted' => format_file_size($size),
+                'mime_type' => $mime,
+                'uploaded_at' => date('Y-m-d H:i:s'),
+                'preview_url' => "view_file.php?type=$type&id=$id",
+                'download_url' => "view_file.php?type=$type&id=$id&download=1",
+                'is_image' => ($ext === 'jpeg' || $ext === 'png'),
+                'is_pdf' => ($ext === 'pdf')
+            ];
+        }
+        
+        // CRITICAL FIX: Clean UTF-8 for string data
+        if (is_string($bukti_file)) {
+            // Remove NULL bytes that can corrupt JSON
+            $bukti_file = str_replace("\0", '', $bukti_file);
+            
+            // Clean invalid UTF-8 sequences (for metadata part)
+            $bukti_file = mb_convert_encoding($bukti_file, 'UTF-8', 'UTF-8');
+        }
+        
         // Check for new format (metadata|||base64)
         if (strpos($bukti_file, '|||') !== false) {
             error_log("    → Detected new format");
@@ -308,6 +375,13 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
             if (!$file_info) {
                 error_log("    ✗ parse_bukti_file returned null");
                 return null;
+            }
+            
+            // Clean UTF-8 in metadata strings
+            foreach (['original_name', 'extension', 'mime_type', 'uploaded_at'] as $key) {
+                if (isset($file_info[$key]) && is_string($file_info[$key])) {
+                    $file_info[$key] = mb_convert_encoding($file_info[$key], 'UTF-8', 'UTF-8');
+                }
             }
             
             $result = [
@@ -332,6 +406,11 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
         $parts = explode('|', $bukti_file);
         
         if (count($parts) >= 5) {
+            // Clean UTF-8 in all parts
+            $parts = array_map(function($part) {
+                return mb_convert_encoding($part, 'UTF-8', 'UTF-8');
+            }, $parts);
+            
             $extension = strtolower(pathinfo($parts[1], PATHINFO_EXTENSION));
             
             $result = [
@@ -356,8 +435,30 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
         
     } catch (Exception $e) {
         error_log("    ✗ Exception: " . $e->getMessage());
-        return null;
+        throw $e; // Re-throw to be caught by caller
     }
+}
+
+/**
+ * Helper function to recursively clean UTF-8 in arrays/objects
+ */
+function utf8_clean_recursive($data) {
+    if (is_array($data)) {
+        foreach ($data as $key => $value) {
+            $data[$key] = utf8_clean_recursive($value);
+        }
+        return $data;
+    }
+    
+    if (is_string($data)) {
+        // Remove invalid UTF-8 sequences
+        $data = mb_convert_encoding($data, 'UTF-8', 'UTF-8');
+        // Alternative: use iconv with IGNORE flag
+        // $data = iconv('UTF-8', 'UTF-8//IGNORE', $data);
+        return $data;
+    }
+    
+    return $data;
 }
 
 /**

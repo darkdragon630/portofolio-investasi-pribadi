@@ -7,7 +7,7 @@ session_start();
 
 // Authentication Check - hanya user yang login bisa akses (TIDAK DIUBAH)
 if (!isset($_SESSION['user_id'])) {
-    header("Location: admin/auth.php");
+    header("Location: auth.php");
     exit;
 }
 

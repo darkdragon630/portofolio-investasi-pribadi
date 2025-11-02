@@ -1,14 +1,14 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.1
- * Upload Keuntungan - WITH AUTO CALCULATE
- * UPDATED: Terintegrasi dengan auto_calculate_investment.php
+ * Upload Keuntungan - WITH AUTO CALCULATE (FIXED)
+ * FIXED: Removed nested transaction issue
  */
 
 session_start();
 require_once "../config/koneksi.php";
 require_once "../config/functions.php";
-require_once "../config/auto_calculate_investment.php"; // ✅ NEW: Auto-calc functions
+require_once "../config/auto_calculate_investment.php";
 
 // Authentication Check
 if (!isset($_SESSION['user_id'])) {
@@ -39,7 +39,8 @@ if ($flash) {
 // Process form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
-        $koneksi->beginTransaction(); // ✅ Start transaction
+        // ✅ HANYA 1 TRANSACTION DI SINI
+        $koneksi->beginTransaction();
         
         // Collect form data
         $investasi_id = $_POST['investasi_id'] ?? '';
@@ -100,37 +101,149 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $stmt = $koneksi->prepare($sql);
-        if ($stmt->execute([
+        if (!$stmt->execute([
             $investasi_id, $kategori_id, $judul_keuntungan, $deskripsi,
             $jumlah_keuntungan, $persentase_keuntungan, $tanggal_keuntungan,
             $sumber_keuntungan, $status, $bukti_file_data
         ])) {
-            $keuntungan_id = $koneksi->lastInsertId();
-            
-            // ✅ NEW: AUTO RECALCULATE INVESTMENT
-            $calc_result = trigger_after_profit_added($koneksi, $keuntungan_id);
-            
-            if (!$calc_result['success']) {
-                throw new Exception("Gagal recalculate: " . $calc_result['error']);
-            }
-            
-            $koneksi->commit(); // ✅ Commit transaction
-            
-            // Success message with new calculated values
-            $msg = "✅ Keuntungan berhasil ditambahkan!";
-            if ($bukti_file_data) $msg .= " 📎 Bukti tersimpan";
-            $msg .= "\n📊 Nilai investasi diupdate otomatis: " . 
-                    format_currency($calc_result['new_value']) . 
-                    " (ROI: " . number_format($calc_result['roi'], 2) . "%)";
-            
-            redirect_with_message("../dashboard.php", "success", $msg);
-        } else {
             throw new Exception('Gagal menyimpan data keuntungan.');
         }
         
+        $keuntungan_id = $koneksi->lastInsertId();
+        
+        // ✅ MANUAL RECALCULATION (TANPA NESTED TRANSACTION)
+        // Get profit details
+        $sql_detail = "SELECT investasi_id, jumlah_keuntungan FROM keuntungan_investasi WHERE id = ?";
+        $stmt_detail = $koneksi->prepare($sql_detail);
+        $stmt_detail->execute([$keuntungan_id]);
+        $profit_detail = $stmt_detail->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$profit_detail) {
+            throw new Exception("Data keuntungan tidak ditemukan");
+        }
+        
+        $inv_id = $profit_detail['investasi_id'];
+        $jumlah = (float)$profit_detail['jumlah_keuntungan'];
+        
+        // Get investment modal
+        $sql_invest = "SELECT jumlah as modal_investasi FROM investasi WHERE id = ?";
+        $stmt_invest = $koneksi->prepare($sql_invest);
+        $stmt_invest->execute([$inv_id]);
+        $invest = $stmt_invest->fetch(PDO::FETCH_ASSOC);
+        $modal = (float)$invest['modal_investasi'];
+        
+        // Calculate totals
+        $sql_keuntungan = "SELECT IFNULL(SUM(jumlah_keuntungan), 0) as total
+                           FROM keuntungan_investasi WHERE investasi_id = ?";
+        $stmt_k = $koneksi->prepare($sql_keuntungan);
+        $stmt_k->execute([$inv_id]);
+        $total_keuntungan = (float)$stmt_k->fetchColumn();
+        
+        $sql_kerugian = "SELECT IFNULL(SUM(jumlah_kerugian), 0) as total
+                         FROM kerugian_investasi WHERE investasi_id = ?";
+        $stmt_kr = $koneksi->prepare($sql_kerugian);
+        $stmt_kr->execute([$inv_id]);
+        $total_kerugian = (float)$stmt_kr->fetchColumn();
+        
+        $nilai_sekarang = $modal + $total_keuntungan - $total_kerugian;
+        $roi_persen = $modal > 0 ? ((($nilai_sekarang - $modal) / $modal) * 100) : 0;
+        
+        // Update investasi table
+        $sql_update = "UPDATE investasi SET updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        $stmt_upd = $koneksi->prepare($sql_update);
+        $stmt_upd->execute([$inv_id]);
+        
+        // Log the change (inline, no function call)
+        $sql_prev = "SELECT nilai_sesudah FROM investasi_change_log
+                     WHERE investasi_id = ?
+                     ORDER BY created_at DESC LIMIT 1";
+        $stmt_prev = $koneksi->prepare($sql_prev);
+        $stmt_prev->execute([$inv_id]);
+        $prev = $stmt_prev->fetch(PDO::FETCH_ASSOC);
+        $nilai_sebelum = $prev ? (float)$prev['nilai_sesudah'] : 0;
+        
+        $sql_log = "INSERT INTO investasi_change_log 
+                   (investasi_id, tipe_perubahan, referensi_id, nilai_sebelum,
+                    nilai_sesudah, selisih, keterangan)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $stmt_log = $koneksi->prepare($sql_log);
+        $stmt_log->execute([
+            $inv_id, 'keuntungan', $keuntungan_id,
+            $nilai_sebelum, $nilai_sekarang, $jumlah,
+            "Profit added: " . format_currency($jumlah)
+        ]);
+        
+        // Update daily snapshot (inline)
+        $sql_inv = "SELECT tanggal_investasi, jumlah FROM investasi WHERE id = ?";
+        $stmt_inv = $koneksi->prepare($sql_inv);
+        $stmt_inv->execute([$inv_id]);
+        $inv_data = $stmt_inv->fetch(PDO::FETCH_ASSOC);
+        
+        if ($inv_data) {
+            $tanggal_investasi = $inv_data['tanggal_investasi'];
+            $today = date('Y-m-d');
+            
+            $start = new DateTime($tanggal_investasi);
+            $end = new DateTime($today);
+            $hari_ke = $start->diff($end)->days + 1;
+            
+            $sql_yesterday = "SELECT nilai_akhir FROM investasi_snapshot_harian
+                             WHERE investasi_id = ? 
+                             AND tanggal_snapshot < ?
+                             ORDER BY tanggal_snapshot DESC LIMIT 1";
+            $stmt_y = $koneksi->prepare($sql_yesterday);
+            $stmt_y->execute([$inv_id, $today]);
+            $yesterday = $stmt_y->fetch(PDO::FETCH_ASSOC);
+            $nilai_awal = $yesterday ? (float)$yesterday['nilai_akhir'] : $modal;
+            
+            $perubahan_nilai = $nilai_sekarang - $nilai_awal;
+            $persentase_perubahan = $nilai_awal > 0 ? (($perubahan_nilai / $nilai_awal) * 100) : 0;
+            $roi_kumulatif = $modal > 0 ? ((($nilai_sekarang - $modal) / $modal) * 100) : 0;
+            
+            $status_perubahan = 'stabil';
+            if ($perubahan_nilai > 0.01) {
+                $status_perubahan = 'naik';
+            } elseif ($perubahan_nilai < -0.01) {
+                $status_perubahan = 'turun';
+            }
+            
+            $sql_snapshot = "INSERT INTO investasi_snapshot_harian 
+                          (investasi_id, tanggal_snapshot, hari_ke, nilai_awal, nilai_akhir,
+                           perubahan_nilai, persentase_perubahan, total_keuntungan_harian,
+                           total_kerugian_harian, status_perubahan, roi_kumulatif)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          ON DUPLICATE KEY UPDATE
+                          nilai_akhir = VALUES(nilai_akhir),
+                          perubahan_nilai = VALUES(perubahan_nilai),
+                          persentase_perubahan = VALUES(persentase_perubahan),
+                          total_keuntungan_harian = VALUES(total_keuntungan_harian),
+                          total_kerugian_harian = VALUES(total_kerugian_harian),
+                          status_perubahan = VALUES(status_perubahan),
+                          roi_kumulatif = VALUES(roi_kumulatif)";
+            
+            $stmt_snap = $koneksi->prepare($sql_snapshot);
+            $stmt_snap->execute([
+                $inv_id, $today, $hari_ke, $nilai_awal, $nilai_sekarang,
+                $perubahan_nilai, $persentase_perubahan, $jumlah,
+                0, $status_perubahan, $roi_kumulatif
+            ]);
+        }
+        
+        // ✅ COMMIT SEMUA PERUBAHAN
+        $koneksi->commit();
+        
+        // Success message
+        $msg = "✅ Keuntungan berhasil ditambahkan!";
+        if ($bukti_file_data) $msg .= " 📎 Bukti tersimpan";
+        $msg .= "\n📊 Nilai investasi diupdate otomatis: " . 
+                format_currency($nilai_sekarang) . 
+                " (ROI: " . number_format($roi_persen, 2) . "%)";
+        
+        redirect_with_message("../dashboard.php", "success", $msg);
+        
     } catch (Exception $e) {
         if ($koneksi->inTransaction()) {
-            $koneksi->rollBack(); // ✅ Rollback on error
+            $koneksi->rollBack();
         }
         error_log("Upload Keuntungan Error: " . $e->getMessage());
         $error = '❌ ' . $e->getMessage();
@@ -243,7 +356,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                class="form-control" 
                                placeholder="Contoh: 1500000 atau 1.500.000" 
                                required>
-                        <small class="form-hint">Format bebas: 4, 1500000, atau 1.500.000</small>
+                        <small class="form-hint">Format bebas: 1500000, atau 1.500.000</small>
                     </div>
                     
                     <div class="form-group">

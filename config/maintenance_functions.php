@@ -1,11 +1,18 @@
 <?php
 /**
- * Maintenance Functions - Database Based (FIXED VERSION)
+ * Maintenance Functions - Database Based (FIXED VERSION v2)
  */
 
-// Pastikan koneksi database sudah ada
+// Pastikan koneksi database sudah ada - FIXED PATH untuk config folder
 if (!isset($koneksi)) {
-    require_once __DIR__ . "/koneksi.php";
+    // File ini ada di /config/, jadi koneksi.php ada di folder yang sama
+    $koneksi_path = __DIR__ . "/koneksi.php";
+    if (file_exists($koneksi_path)) {
+        require_once $koneksi_path;
+    } else {
+        error_log("Koneksi file not found at: " . $koneksi_path);
+        throw new Exception("Database configuration file not found");
+    }
 }
 
 /**

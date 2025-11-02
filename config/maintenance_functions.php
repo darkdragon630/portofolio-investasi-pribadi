@@ -1,11 +1,11 @@
 <?php
 /**
- * Maintenance Functions - Database Based
+ * Maintenance Functions - Database Based (FIXED VERSION)
  */
 
 // Pastikan koneksi database sudah ada
 if (!isset($koneksi)) {
-    require_once "koneksi.php";
+    require_once __DIR__ . "/koneksi.php";
 }
 
 /**
@@ -15,16 +15,28 @@ function get_maintenance_status_db() {
     global $koneksi;
     
     try {
+        // Validate connection
+        if (!$koneksi) {
+            error_log("Database connection is null");
+            return get_default_maintenance_status();
+        }
+        
         // Check if table exists
         $table_check = $koneksi->query("SHOW TABLES LIKE 'maintenance_mode'");
-        if ($table_check->rowCount() == 0) {
-            return get_default_maintenance_status();
+        if (!$table_check || $table_check->rowCount() == 0) {
+            error_log("Maintenance table does not exist, creating...");
+            ensure_maintenance_table_exists();
         }
         
         $sql = "SELECT * FROM maintenance_mode ORDER BY id DESC LIMIT 1";
         $stmt = $koneksi->prepare($sql);
-        $stmt->execute();
         
+        if (!$stmt) {
+            error_log("Failed to prepare statement");
+            return get_default_maintenance_status();
+        }
+        
+        $stmt->execute();
         $result = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($result) {
@@ -35,8 +47,11 @@ function get_maintenance_status_db() {
         
         return get_default_maintenance_status();
         
-    } catch (Exception $e) {
+    } catch (PDOException $e) {
         error_log("Maintenance DB Error: " . $e->getMessage());
+        return get_default_maintenance_status();
+    } catch (Exception $e) {
+        error_log("Maintenance Error: " . $e->getMessage());
         return get_default_maintenance_status();
     }
 }
@@ -70,21 +85,26 @@ function enable_maintenance_db($html_content) {
             throw new Exception("Database connection not available");
         }
         
+        // Validate HTML content
+        if (empty($html_content)) {
+            throw new Exception("HTML content cannot be empty");
+        }
+        
         // Check if table exists, create if not
         ensure_maintenance_table_exists();
         
         $koneksi->beginTransaction();
         
         // First, deactivate any active maintenance
-        $sql_deactivate = "UPDATE maintenance_mode SET is_active = false, deactivated_at = NOW() WHERE is_active = true";
+        $sql_deactivate = "UPDATE maintenance_mode SET is_active = 0, deactivated_at = NOW() WHERE is_active = 1";
         $stmt_deactivate = $koneksi->prepare($sql_deactivate);
         $stmt_deactivate->execute();
         
         // Insert new maintenance record
         $sql = "INSERT INTO maintenance_mode (is_active, maintenance_html, activated_at, created_at, updated_at) 
-                VALUES (true, ?, NOW(), NOW(), NOW())";
+                VALUES (1, :html_content, NOW(), NOW(), NOW())";
         $stmt = $koneksi->prepare($sql);
-        $result = $stmt->execute([$html_content]);
+        $result = $stmt->execute([':html_content' => $html_content]);
         
         if (!$result) {
             throw new Exception("Failed to insert maintenance record");
@@ -94,6 +114,12 @@ function enable_maintenance_db($html_content) {
         
         return ['success' => true, 'message' => 'Maintenance mode diaktifkan'];
         
+    } catch (PDOException $e) {
+        if (isset($koneksi) && $koneksi->inTransaction()) {
+            $koneksi->rollBack();
+        }
+        error_log("Enable Maintenance DB Error (PDO): " . $e->getMessage());
+        return ['success' => false, 'error' => 'Database error: ' . $e->getMessage()];
     } catch (Exception $e) {
         if (isset($koneksi) && $koneksi->inTransaction()) {
             $koneksi->rollBack();
@@ -116,8 +142,8 @@ function disable_maintenance_db() {
         }
         
         $sql = "UPDATE maintenance_mode 
-                SET is_active = false, deactivated_at = NOW(), updated_at = NOW()
-                WHERE is_active = true";
+                SET is_active = 0, deactivated_at = NOW(), updated_at = NOW()
+                WHERE is_active = 1";
         $stmt = $koneksi->prepare($sql);
         $result = $stmt->execute();
         
@@ -127,6 +153,9 @@ function disable_maintenance_db() {
             return ['success' => true, 'message' => 'Tidak ada maintenance mode yang aktif'];
         }
         
+    } catch (PDOException $e) {
+        error_log("Disable Maintenance DB Error (PDO): " . $e->getMessage());
+        return ['success' => false, 'error' => 'Database error: ' . $e->getMessage()];
     } catch (Exception $e) {
         error_log("Disable Maintenance DB Error: " . $e->getMessage());
         return ['success' => false, 'error' => $e->getMessage()];
@@ -140,24 +169,37 @@ function ensure_maintenance_table_exists() {
     global $koneksi;
     
     try {
+        if (!$koneksi) {
+            throw new Exception("Database connection not available");
+        }
+        
         $table_check = $koneksi->query("SHOW TABLES LIKE 'maintenance_mode'");
-        if ($table_check->rowCount() == 0) {
-            // Create the table
-            $sql = "CREATE TABLE maintenance_mode (
+        
+        if (!$table_check || $table_check->rowCount() == 0) {
+            // Create the table with correct syntax
+            $sql = "CREATE TABLE IF NOT EXISTS maintenance_mode (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 is_active TINYINT(1) DEFAULT 0,
                 maintenance_html LONGTEXT NULL,
-                activated_at TIMESTAMP NULL,
-                deactivated_at TIMESTAMP NULL,
-                scheduled_start TIMESTAMP NULL,
-                scheduled_end TIMESTAMP NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            )";
+                activated_at TIMESTAMP NULL DEFAULT NULL,
+                deactivated_at TIMESTAMP NULL DEFAULT NULL,
+                scheduled_start TIMESTAMP NULL DEFAULT NULL,
+                scheduled_end TIMESTAMP NULL DEFAULT NULL,
+                created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_is_active (is_active)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
             
             $koneksi->exec($sql);
             error_log("Maintenance table created successfully");
+            return true;
         }
+        
+        return true;
+        
+    } catch (PDOException $e) {
+        error_log("Create table error (PDO): " . $e->getMessage());
+        throw new Exception("Failed to create maintenance table: " . $e->getMessage());
     } catch (Exception $e) {
         error_log("Create table error: " . $e->getMessage());
         throw new Exception("Failed to create maintenance table: " . $e->getMessage());
@@ -173,11 +215,11 @@ function serve_maintenance_page_if_active() {
     $current_page = basename($_SERVER['PHP_SELF']);
     
     // Skip maintenance for API endpoints and assets
-    $allowed_paths = ['/api/', '/assets/', '/css/', '/js/', '/img/', '/images/'];
-    $current_path = $_SERVER['REQUEST_URI'];
+    $allowed_paths = ['/api/', '/assets/', '/css/', '/js/', '/img/', '/images/', '/vendor/'];
+    $current_path = $_SERVER['REQUEST_URI'] ?? '';
     
     foreach ($allowed_paths as $path) {
-        if (strpos($current_path, $path) === 0) {
+        if (strpos($current_path, $path) !== false) {
             return;
         }
     }
@@ -194,7 +236,7 @@ function serve_maintenance_page_if_active() {
     try {
         $status = get_maintenance_status_db();
         
-        if ($status['is_active'] && !empty($status['maintenance_html'])) {
+        if (isset($status['is_active']) && $status['is_active'] && !empty($status['maintenance_html'])) {
             // Set HTTP 503 status
             http_response_code(503);
             header('Retry-After: 3600'); // 1 hour
@@ -349,6 +391,10 @@ function get_maintenance_stats() {
     global $koneksi;
     
     try {
+        if (!$koneksi) {
+            throw new Exception("Database connection not available");
+        }
+        
         $sql = "SELECT 
                 COUNT(*) as total_activations,
                 SUM(is_active) as currently_active,

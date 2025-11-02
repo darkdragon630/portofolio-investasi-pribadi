@@ -187,7 +187,7 @@ $cash_by_category = get_cash_by_category($koneksi);
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
     <title>Laporan & Analisis -LUMINARK HOLDINGS v3.0</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">

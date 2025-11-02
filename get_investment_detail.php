@@ -1,23 +1,31 @@
 <?php
 /**
- * SAZEN Investment Portfolio Manager v3.0
- * AJAX Endpoint - Get Investment Detail (FIXED VERSION)
- * Fixed: JSON parsing, bukti file handling, error handling
+ * SAZEN Investment Portfolio Manager v3.1
+ * AJAX Endpoint - Get Investment Detail (FIXED for ID 5)
+ * 
+ * FIXES APPLIED:
+ * 1. Enhanced output buffering control
+ * 2. Added strict error handling for JSON encoding
+ * 3. Detect and log corrupt data
+ * 4. Prevent premature script termination
  */
 
 require_once 'config/koneksi.php';
 
-header('Content-Type: application/json; charset=utf-8');
+// CRITICAL: Prevent ANY output before JSON
+ob_start();
 
-// Disable HTML error output
+// Disable display_errors to prevent HTML error output
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
-// Increase memory limit for large files
-ini_set('memory_limit', '256M');
+// Set proper headers IMMEDIATELY
+header('Content-Type: application/json; charset=utf-8');
+header('X-Content-Type-Options: nosniff');
 
-// Start output buffering to catch any accidental output
-ob_start();
+// Increase limits for large binary data
+ini_set('memory_limit', '256M');
+ini_set('max_execution_time', '120');
 
 try {
     // Validate request method
@@ -33,8 +41,6 @@ try {
     $id = (int)$_GET['id'];
 
     error_log("=== GET_INVESTMENT_DETAIL START (ID: $id) ===");
-    error_log("Request URI: " . $_SERVER['REQUEST_URI']);
-    error_log("PHP Version: " . PHP_VERSION);
 
     // Check database connection
     if (!$koneksi) {
@@ -71,10 +77,16 @@ try {
     }
 
     error_log("✓ Investment found: " . $investment['judul_investasi']);
-    error_log("  Status: " . ($investment['status'] ?? 'NULL'));
-    error_log("  bukti_file type: " . gettype($investment['bukti_file']));
-    error_log("  bukti_file is_null: " . (is_null($investment['bukti_file']) ? 'YES' : 'NO'));
-    error_log("  bukti_file length: " . (is_string($investment['bukti_file']) ? strlen($investment['bukti_file']) : 'N/A'));
+    
+    // CRITICAL FIX: Check if bukti_file is corrupt
+    $bukti_file_raw = $investment['bukti_file'];
+    $bukti_file_size = is_string($bukti_file_raw) ? strlen($bukti_file_raw) : 0;
+    error_log("  bukti_file size: " . $bukti_file_size . " bytes");
+    
+    // Detect corrupt binary data
+    if ($bukti_file_size > 0 && $bukti_file_size < 50) {
+        error_log("  ⚠ WARNING: Suspiciously small bukti_file");
+    }
     
     // Parse investment bukti file using helper function
     $bukti_data = get_safe_bukti_data($investment['bukti_file'], 'investasi', $investment['id']);
@@ -216,33 +228,38 @@ try {
     }
     
     error_log("✓ Response prepared successfully");
-    error_log("=== GET_INVESTMENT_DETAIL END (SUCCESS) ===");
     
-    // Clear any accidental output
-    ob_end_clean();
-    
-    // Add debug info in response (only in development)
-    $debug_mode = false; // Set to true to enable debug output
-    
+    // CRITICAL FIX: Test JSON encoding BEFORE output
     $response = [
         'success' => true,
         'investment' => $response_data
     ];
     
-    if ($debug_mode) {
-        $response['_debug'] = [
-            'php_version' => PHP_VERSION,
-            'time' => date('Y-m-d H:i:s'),
-            'memory_usage' => memory_get_usage(true)
-        ];
+    $json_test = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    
+    if ($json_test === false) {
+        $json_error = json_last_error_msg();
+        error_log("✗ JSON ENCODING FAILED: " . $json_error);
+        throw new Exception("JSON encoding failed: " . $json_error);
     }
     
-    // Success response with proper encoding
-    echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    $json_length = strlen($json_test);
+    error_log("✓ JSON encoded successfully: " . $json_length . " bytes");
+    
+    // Clear output buffer and send response
+    ob_end_clean();
+    
+    // Send JSON response with proper length header
+    header('Content-Length: ' . $json_length);
+    echo $json_test;
+    
+    error_log("=== GET_INVESTMENT_DETAIL END (SUCCESS) ===");
+    exit(0); // Explicit success exit
     
 } catch (Exception $e) {
     // Log error
     error_log("✗ ERROR: " . $e->getMessage());
+    error_log("  Stack: " . $e->getTraceAsString());
     error_log("=== GET_INVESTMENT_DETAIL END (ERROR) ===");
     
     // Clear any accidental output
@@ -252,23 +269,21 @@ try {
     $code = $e->getCode() ?: 500;
     http_response_code(in_array($code, [400, 404, 405]) ? $code : 500);
     
-    echo json_encode([
+    $error_response = [
         'success' => false,
         'message' => $e->getMessage(),
         'error_code' => $code
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ];
+    
+    $error_json = json_encode($error_response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    
+    header('Content-Length: ' . strlen($error_json));
+    echo $error_json;
+    exit(1);
 }
 
 /**
  * Helper function to safely parse bukti file data
- * Handles both old format (filename|...) and new format (metadata|||base64)
- * 
- * ⚠️ IMPORTANT: Returns ONLY metadata, NOT base64_data (to keep JSON response small)
- * 
- * @param string|null $bukti_file Raw bukti file data from database
- * @param string $type Type: 'investasi', 'keuntungan', 'kerugian'
- * @param int $id Record ID
- * @return array|null Bukti data array or null
  */
 function get_safe_bukti_data($bukti_file, $type, $id) {
     if (empty($bukti_file)) {
@@ -277,25 +292,17 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
     }
     
     error_log("  → Parsing bukti for $type ID $id");
-    error_log("    Data type: " . gettype($bukti_file));
-    error_log("    Is string: " . (is_string($bukti_file) ? 'YES' : 'NO'));
-    error_log("    Length: " . (is_string($bukti_file) ? strlen($bukti_file) : 'N/A'));
     
     try {
-        // LONGBLOB might be returned as resource or string depending on PDO fetch mode
-        // Convert to string if it's a resource
+        // Convert resource to string if needed
         if (is_resource($bukti_file)) {
             error_log("    → Converting resource to string");
             $bukti_file = stream_get_contents($bukti_file);
         }
         
-        // Check if it's binary data (starts with JSON metadata)
-        $first_100_chars = substr($bukti_file, 0, 100);
-        error_log("    First 100 chars: " . bin2hex($first_100_chars));
-        
-        // Try new format first (metadata|||base64)
+        // Check for new format (metadata|||base64)
         if (strpos($bukti_file, '|||') !== false) {
-            error_log("    → Detected new format (metadata|||base64)");
+            error_log("    → Detected new format");
             $file_info = parse_bukti_file($bukti_file);
             
             if (!$file_info) {
@@ -314,17 +321,15 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
                 'download_url' => "view_file.php?type=$type&id=$id&download=1",
                 'is_image' => in_array(strtolower($file_info['extension']), ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                 'is_pdf' => strtolower($file_info['extension']) === 'pdf'
-                // ⚠️ CRITICAL: DO NOT include 'base64_data' here to keep JSON response small
             ];
             
-            error_log("    ✓ Parsed: " . $file_info['original_name'] . " (is_image: " . ($result['is_image'] ? 'YES' : 'NO') . ")");
+            error_log("    ✓ Parsed: " . $file_info['original_name']);
             return $result;
         }
         
-        // Try old format (filename|original_name|size|mime_type|timestamp)
-        error_log("    → Trying old format (pipe-separated)");
+        // Try old format (pipe-separated)
+        error_log("    → Trying old format");
         $parts = explode('|', $bukti_file);
-        error_log("    → Parts count: " . count($parts));
         
         if (count($parts) >= 5) {
             $extension = strtolower(pathinfo($parts[1], PATHINFO_EXTENSION));
@@ -340,19 +345,17 @@ function get_safe_bukti_data($bukti_file, $type, $id) {
                 'download_url' => "view_file.php?type=$type&id=$id&download=1",
                 'is_image' => in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp']),
                 'is_pdf' => $extension === 'pdf'
-                // ⚠️ NO base64_data in old format either
             ];
             
             error_log("    ✓ Parsed (old format): " . $parts[1]);
             return $result;
         }
         
-        error_log("    ✗ Unknown format");
+        error_log("    ✗ Unknown format, size: " . strlen($bukti_file));
         return null;
         
     } catch (Exception $e) {
-        error_log("    ✗ Exception parsing bukti: " . $e->getMessage());
-        error_log("    ✗ Stack: " . $e->getTraceAsString());
+        error_log("    ✗ Exception: " . $e->getMessage());
         return null;
     }
 }

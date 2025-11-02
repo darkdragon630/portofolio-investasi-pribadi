@@ -30,6 +30,8 @@ try {
     $id = (int)$_GET['id'];
 
     error_log("=== GET_INVESTMENT_DETAIL START (ID: $id) ===");
+    error_log("Request URI: " . $_SERVER['REQUEST_URI']);
+    error_log("PHP Version: " . PHP_VERSION);
 
     // Check database connection
     if (!$koneksi) {

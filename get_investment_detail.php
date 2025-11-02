@@ -1,44 +1,36 @@
 <?php
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * AJAX Endpoint - Get Investment Detail (Database Storage)
- * Fixed Version with Enhanced Debugging
+ * AJAX Endpoint - Get Investment Detail (FIXED VERSION)
+ * Fixed: JSON parsing, bukti file handling, error handling
  */
 
 require_once 'config/koneksi.php';
 
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
-// Enable error logging
+// Disable HTML error output
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
-// Validate request method
-if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    http_response_code(405);
-    echo json_encode([
-        'success' => false,
-        'message' => 'Method not allowed'
-    ]);
-    exit;
-}
-
-// Validate ID parameter
-if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
-    http_response_code(400);
-    echo json_encode([
-        'success' => false,
-        'message' => 'Invalid investment ID'
-    ]);
-    exit;
-}
-
-$id = (int)$_GET['id'];
-
-// Debug log
-error_log("=== GET_INVESTMENT_DETAIL START (ID: $id) ===");
+// Start output buffering to catch any accidental output
+ob_start();
 
 try {
+    // Validate request method
+    if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+        throw new Exception('Method not allowed', 405);
+    }
+
+    // Validate ID parameter
+    if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
+        throw new Exception('Invalid investment ID', 400);
+    }
+
+    $id = (int)$_GET['id'];
+
+    error_log("=== GET_INVESTMENT_DETAIL START (ID: $id) ===");
+
     // Check database connection
     if (!$koneksi) {
         throw new Exception("Database connection failed");
@@ -53,6 +45,7 @@ try {
             i.jumlah as modal_investasi,
             i.tanggal_investasi,
             i.bukti_file,
+            i.status,
             k.nama_kategori,
             k.id as kategori_id
         FROM investasi i
@@ -62,52 +55,20 @@ try {
     
     $stmt_investment = $koneksi->prepare($sql_investment);
     if (!$stmt_investment) {
-        throw new Exception("Prepare failed: " . $koneksi->error);
+        throw new Exception("Prepare failed: " . $koneksi->errorInfo()[2]);
     }
     
     $stmt_investment->execute([$id]);
-    $investment = $stmt_investment->fetch();
+    $investment = $stmt_investment->fetch(PDO::FETCH_ASSOC);
     
     if (!$investment) {
-        error_log("Investment not found for ID: $id");
-        http_response_code(404);
-        echo json_encode([
-            'success' => false,
-            'message' => 'Investment not found'
-        ]);
-        exit;
+        throw new Exception("Investment not found", 404);
     }
 
     error_log("✓ Investment found: " . $investment['judul_investasi']);
-    error_log("  bukti_file raw: " . ($investment['bukti_file'] ?? 'NULL'));
     
-    // Parse investment bukti file
-    $bukti_data = null;
-    if ($investment['bukti_file']) {
-        error_log("→ Parsing investment bukti_file...");
-        $file_info = parse_bukti_file($investment['bukti_file']);
-        if ($file_info) {
-            $bukti_data = [
-                'original_name' => $file_info['original_name'],
-                'extension' => $file_info['extension'],
-                'size' => $file_info['size'],
-                'size_formatted' => format_file_size($file_info['size']),
-                'mime_type' => $file_info['mime_type'],
-                'uploaded_at' => $file_info['uploaded_at'],
-                'preview_url' => 'view_file.php?type=investasi&id=' . $investment['id'],
-                'download_url' => 'view_file.php?type=investasi&id=' . $investment['id'] . '&download=1',
-                'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
-                'is_pdf' => $file_info['extension'] === 'pdf'
-            ];
-            error_log("  ✓ Investment bukti parsed: " . $file_info['original_name']);
-            error_log("  ✓ Is image: " . ($bukti_data['is_image'] ? 'YES' : 'NO'));
-            error_log("  ✓ Preview URL: " . $bukti_data['preview_url']);
-        } else {
-            error_log("  ✗ Failed to parse investment bukti_file");
-        }
-    } else {
-        error_log("  → No bukti_file for investment");
-    }
+    // Parse investment bukti file using helper function
+    $bukti_data = get_safe_bukti_data($investment['bukti_file'], 'investasi', $investment['id']);
     
     // Get all keuntungan for this investment
     $sql_keuntungan = "
@@ -126,12 +87,8 @@ try {
     ";
     
     $stmt_keuntungan = $koneksi->prepare($sql_keuntungan);
-    if (!$stmt_keuntungan) {
-        throw new Exception("Prepare keuntungan failed: " . $koneksi->error);
-    }
-    
     $stmt_keuntungan->execute([$id]);
-    $keuntungan_list = $stmt_keuntungan->fetchAll();
+    $keuntungan_list = $stmt_keuntungan->fetchAll(PDO::FETCH_ASSOC);
     
     error_log("✓ Keuntungan count: " . count($keuntungan_list));
     
@@ -153,19 +110,8 @@ try {
     ";
     
     $stmt_kerugian = $koneksi->prepare($sql_kerugian);
-    if (!$stmt_kerugian) {
-        throw new Exception("Prepare kerugian failed: " . $koneksi->error);
-    }
-    
     $stmt_kerugian->execute([$id]);
-    $kerugian_terbaru = $stmt_kerugian->fetch();
-    
-    if ($kerugian_terbaru) {
-        error_log("✓ Kerugian terbaru found: " . $kerugian_terbaru['judul_kerugian']);
-        error_log("  bukti_file raw: " . ($kerugian_terbaru['bukti_file'] ?? 'NULL'));
-    } else {
-        error_log("→ No kerugian found");
-    }
+    $kerugian_terbaru = $stmt_kerugian->fetch(PDO::FETCH_ASSOC);
     
     // Calculate totals
     $total_keuntungan = 0;
@@ -183,31 +129,26 @@ try {
         ? (($nilai_sekarang - $investment['modal_investasi']) / $investment['modal_investasi'] * 100) 
         : 0;
     
-    error_log("✓ Calculations done:");
-    error_log("  Total Keuntungan: " . $total_keuntungan);
-    error_log("  Total Kerugian: " . $total_kerugian);
-    error_log("  Nilai Sekarang: " . $nilai_sekarang);
-    error_log("  ROI: " . round($roi_persen, 2) . "%");
-    
     // Format data for response
     $response_data = [
-        'id' => $investment['id'],
+        'id' => (int)$investment['id'],
         'judul_investasi' => $investment['judul_investasi'],
-        'deskripsi' => $investment['deskripsi'],
-        'modal_investasi' => $investment['modal_investasi'],
+        'deskripsi' => $investment['deskripsi'] ?? '',
+        'modal_investasi' => (float)$investment['modal_investasi'],
         'modal_investasi_formatted' => 'Rp ' . number_format($investment['modal_investasi'], 2, ',', '.'),
-        'total_keuntungan' => $total_keuntungan,
+        'total_keuntungan' => (float)$total_keuntungan,
         'total_keuntungan_formatted' => 'Rp ' . number_format($total_keuntungan, 2, ',', '.'),
-        'total_kerugian' => $total_kerugian,
+        'total_kerugian' => (float)$total_kerugian,
         'total_kerugian_formatted' => 'Rp ' . number_format($total_kerugian, 2, ',', '.'),
-        'nilai_sekarang' => $nilai_sekarang,
+        'nilai_sekarang' => (float)$nilai_sekarang,
         'nilai_sekarang_formatted' => 'Rp ' . number_format($nilai_sekarang, 2, ',', '.'),
         'roi_persen' => round($roi_persen, 2),
         'roi_persen_formatted' => number_format($roi_persen, 2) . '%',
         'tanggal_investasi' => $investment['tanggal_investasi'],
         'tanggal_investasi_formatted' => date('d F Y', strtotime($investment['tanggal_investasi'])),
         'nama_kategori' => $investment['nama_kategori'],
-        'kategori_id' => $investment['kategori_id'],
+        'kategori_id' => (int)$investment['kategori_id'],
+        'status' => $investment['status'] ?? 'aktif',
         'has_bukti' => !empty($investment['bukti_file']),
         'bukti_data' => $bukti_data,
         'keuntungan' => [],
@@ -222,37 +163,15 @@ try {
     ];
     
     // Format keuntungan with bukti data
-    error_log("→ Processing keuntungan bukti files...");
-    foreach ($keuntungan_list as $index => $k) {
-        $keuntungan_bukti = null;
-        if ($k['bukti_file']) {
-            error_log("  [" . ($index+1) . "] Parsing keuntungan bukti (ID: " . $k['id'] . ")");
-            $file_info = parse_bukti_file($k['bukti_file']);
-            if ($file_info) {
-                $keuntungan_bukti = [
-                    'original_name' => $file_info['original_name'],
-                    'extension' => $file_info['extension'],
-                    'size' => $file_info['size'],
-                    'size_formatted' => format_file_size($file_info['size']),
-                    'mime_type' => $file_info['mime_type'],
-                    'uploaded_at' => $file_info['uploaded_at'],
-                    'preview_url' => 'view_file.php?type=keuntungan&id=' . $k['id'],
-                    'download_url' => 'view_file.php?type=keuntungan&id=' . $k['id'] . '&download=1',
-                    'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
-                    'is_pdf' => $file_info['extension'] === 'pdf'
-                ];
-                error_log("      ✓ Parsed: " . $file_info['original_name']);
-            } else {
-                error_log("      ✗ Failed to parse");
-            }
-        }
+    foreach ($keuntungan_list as $k) {
+        $keuntungan_bukti = get_safe_bukti_data($k['bukti_file'], 'keuntungan', $k['id']);
         
         $response_data['keuntungan'][] = [
-            'id' => $k['id'],
+            'id' => (int)$k['id'],
             'judul_keuntungan' => $k['judul_keuntungan'],
-            'jumlah_keuntungan' => $k['jumlah_keuntungan'],
+            'jumlah_keuntungan' => (float)$k['jumlah_keuntungan'],
             'jumlah_keuntungan_formatted' => 'Rp ' . number_format($k['jumlah_keuntungan'], 2, ',', '.'),
-            'persentase_keuntungan' => $k['persentase_keuntungan'],
+            'persentase_keuntungan' => $k['persentase_keuntungan'] ? (float)$k['persentase_keuntungan'] : null,
             'persentase_keuntungan_formatted' => $k['persentase_keuntungan'] ? number_format($k['persentase_keuntungan'], 2) . '%' : '-',
             'tanggal_keuntungan' => $k['tanggal_keuntungan'],
             'tanggal_keuntungan_formatted' => date('d M Y', strtotime($k['tanggal_keuntungan'])),
@@ -267,36 +186,14 @@ try {
     
     // Format kerugian terbaru
     if ($kerugian_terbaru) {
-        error_log("→ Processing kerugian terbaru bukti...");
-        $kerugian_bukti = null;
-        if ($kerugian_terbaru['bukti_file']) {
-            error_log("  Parsing kerugian bukti (ID: " . $kerugian_terbaru['id'] . ")");
-            $file_info = parse_bukti_file($kerugian_terbaru['bukti_file']);
-            if ($file_info) {
-                $kerugian_bukti = [
-                    'original_name' => $file_info['original_name'],
-                    'extension' => $file_info['extension'],
-                    'size' => $file_info['size'],
-                    'size_formatted' => format_file_size($file_info['size']),
-                    'mime_type' => $file_info['mime_type'],
-                    'uploaded_at' => $file_info['uploaded_at'],
-                    'preview_url' => 'view_file.php?type=kerugian&id=' . $kerugian_terbaru['id'],
-                    'download_url' => 'view_file.php?type=kerugian&id=' . $kerugian_terbaru['id'] . '&download=1',
-                    'is_image' => in_array($file_info['extension'], ['jpg', 'jpeg', 'png', 'gif', 'webp']),
-                    'is_pdf' => $file_info['extension'] === 'pdf'
-                ];
-                error_log("  ✓ Parsed: " . $file_info['original_name']);
-            } else {
-                error_log("  ✗ Failed to parse");
-            }
-        }
+        $kerugian_bukti = get_safe_bukti_data($kerugian_terbaru['bukti_file'], 'kerugian', $kerugian_terbaru['id']);
         
         $response_data['kerugian_terbaru'] = [
-            'id' => $kerugian_terbaru['id'],
+            'id' => (int)$kerugian_terbaru['id'],
             'judul_kerugian' => $kerugian_terbaru['judul_kerugian'],
-            'jumlah_kerugian' => $kerugian_terbaru['jumlah_kerugian'],
+            'jumlah_kerugian' => (float)$kerugian_terbaru['jumlah_kerugian'],
             'jumlah_kerugian_formatted' => 'Rp ' . number_format($kerugian_terbaru['jumlah_kerugian'], 2, ',', '.'),
-            'persentase_kerugian' => $kerugian_terbaru['persentase_kerugian'],
+            'persentase_kerugian' => $kerugian_terbaru['persentase_kerugian'] ? (float)$kerugian_terbaru['persentase_kerugian'] : null,
             'persentase_kerugian_formatted' => $kerugian_terbaru['persentase_kerugian'] ? number_format($kerugian_terbaru['persentase_kerugian'], 2) . '%' : '-',
             'tanggal_kerugian' => $kerugian_terbaru['tanggal_kerugian'],
             'tanggal_kerugian_formatted' => date('d M Y', strtotime($kerugian_terbaru['tanggal_kerugian'])),
@@ -309,63 +206,113 @@ try {
         ];
     }
     
-    error_log("✓ Response data prepared successfully");
-    error_log("  Investment has_bukti: " . ($response_data['has_bukti'] ? 'YES' : 'NO'));
-    error_log("  Keuntungan count: " . count($response_data['keuntungan']));
-    error_log("  Kerugian terbaru: " . ($response_data['kerugian_terbaru'] ? 'YES' : 'NO'));
+    error_log("✓ Response prepared successfully");
     error_log("=== GET_INVESTMENT_DETAIL END (SUCCESS) ===");
+    
+    // Clear any accidental output
+    ob_end_clean();
     
     // Success response
     echo json_encode([
         'success' => true,
         'investment' => $response_data
-    ], JSON_PRETTY_PRINT);
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     
 } catch (Exception $e) {
     // Log error
     error_log("✗ ERROR: " . $e->getMessage());
-    error_log("  Stack trace: " . $e->getTraceAsString());
     error_log("=== GET_INVESTMENT_DETAIL END (ERROR) ===");
     
+    // Clear any accidental output
+    ob_end_clean();
+    
     // Error response
-    http_response_code(500);
+    $code = $e->getCode() ?: 500;
+    http_response_code(in_array($code, [400, 404, 405]) ? $code : 500);
+    
     echo json_encode([
         'success' => false,
-        'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
-        'debug' => [
-            'error' => $e->getMessage(),
-            'line' => $e->getLine(),
-            'file' => $e->getFile()
-        ]
-    ], JSON_PRETTY_PRINT);
+        'message' => $e->getMessage(),
+        'error_code' => $code
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
 /**
- * Helper function to parse bukti file data from database
+ * Helper function to safely parse bukti file data
+ * Handles both old format (filename|...) and new format (metadata|||base64)
+ * 
+ * @param string|null $bukti_file Raw bukti file data from database
+ * @param string $type Type: 'investasi', 'keuntungan', 'kerugian'
+ * @param int $id Record ID
+ * @return array|null Bukti data array or null
  */
-function parse_bukti_file($bukti_file) {
-    error_log("    parse_bukti_file INPUT: " . $bukti_file);
-    
-    // Format: filename|original_name|size|mime_type|timestamp
-    $parts = explode('|', $bukti_file);
-    
-    error_log("    parse_bukti_file PARTS: " . count($parts) . " parts");
-    
-    if (count($parts) >= 5) {
-        $result = [
-            'filename' => $parts[0],
-            'original_name' => $parts[1],
-            'size' => (int)$parts[2],
-            'mime_type' => $parts[3],
-            'uploaded_at' => $parts[4],
-            'extension' => strtolower(pathinfo($parts[1], PATHINFO_EXTENSION))
-        ];
-        error_log("    ✓ parse_bukti_file SUCCESS");
-        return $result;
+function get_safe_bukti_data($bukti_file, $type, $id) {
+    if (empty($bukti_file)) {
+        error_log("  → No bukti_file for $type ID $id");
+        return null;
     }
     
-    error_log("    ✗ parse_bukti_file FAILED - Not enough parts");
-    return null;
+    error_log("  → Parsing bukti for $type ID $id (length: " . strlen($bukti_file) . ")");
+    
+    try {
+        // Try new format first (metadata|||base64)
+        if (strpos($bukti_file, '|||') !== false) {
+            error_log("    Detected new format (metadata|||base64)");
+            $file_info = parse_bukti_file($bukti_file);
+            
+            if (!$file_info) {
+                error_log("    ✗ parse_bukti_file returned null");
+                return null;
+            }
+            
+            $result = [
+                'original_name' => $file_info['original_name'],
+                'extension' => $file_info['extension'],
+                'size' => (int)$file_info['size'],
+                'size_formatted' => format_file_size($file_info['size']),
+                'mime_type' => $file_info['mime_type'],
+                'uploaded_at' => $file_info['uploaded_at'],
+                'preview_url' => "view_file.php?type=$type&id=$id",
+                'download_url' => "view_file.php?type=$type&id=$id&download=1",
+                'is_image' => in_array(strtolower($file_info['extension']), ['jpg', 'jpeg', 'png', 'gif', 'webp']),
+                'is_pdf' => strtolower($file_info['extension']) === 'pdf'
+            ];
+            
+            error_log("    ✓ Parsed: " . $file_info['original_name'] . " (is_image: " . ($result['is_image'] ? 'YES' : 'NO') . ")");
+            return $result;
+        }
+        
+        // Try old format (filename|original_name|size|mime_type|timestamp)
+        error_log("    Detected old format (pipe-separated)");
+        $parts = explode('|', $bukti_file);
+        
+        if (count($parts) >= 5) {
+            $extension = strtolower(pathinfo($parts[1], PATHINFO_EXTENSION));
+            
+            $result = [
+                'original_name' => $parts[1],
+                'extension' => $extension,
+                'size' => (int)$parts[2],
+                'size_formatted' => format_file_size((int)$parts[2]),
+                'mime_type' => $parts[3],
+                'uploaded_at' => $parts[4],
+                'preview_url' => "view_file.php?type=$type&id=$id",
+                'download_url' => "view_file.php?type=$type&id=$id&download=1",
+                'is_image' => in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp']),
+                'is_pdf' => $extension === 'pdf'
+            ];
+            
+            error_log("    ✓ Parsed (old format): " . $parts[1]);
+            return $result;
+        }
+        
+        error_log("    ✗ Unknown format (not enough parts: " . count($parts) . ")");
+        return null;
+        
+    } catch (Exception $e) {
+        error_log("    ✗ Exception parsing bukti: " . $e->getMessage());
+        return null;
+    }
 }
 
 /**
@@ -382,4 +329,3 @@ function format_file_size($bytes) {
         return $bytes . ' B';
     }
 }
-?>

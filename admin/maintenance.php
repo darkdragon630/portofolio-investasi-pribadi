@@ -1,34 +1,20 @@
 <?php
 /**
- * SAZEN - Maintenance System (Simplified)
+ * SAZEN - Maintenance System (Database Based)
  */
 
 session_start();
+require_once "config/koneksi.php";
+require_once "config/maintenance_functions.php";
 
 // Authentication Check - hanya admin yang bisa akses
-if (!isset($_SESSION['user_id'])) {
-    header("Location: admin/auth.php");
+if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') != 'admin') {
+    header("Location: auth.php");
     exit;
 }
 
 $error = '';
 $success = '';
-
-// Create maintenance directory if not exists
-$maintenance_dir = __DIR__ . '/maintenance';
-if (!file_exists($maintenance_dir)) {
-    mkdir($maintenance_dir, 0755, true);
-}
-
-// Simple maintenance status check
-function get_maintenance_status() {
-    $status_file = __DIR__ . '/maintenance/maintenance_status.json';
-    if (file_exists($status_file)) {
-        $data = json_decode(file_get_contents($status_file), true);
-        return is_array($data) ? $data : [];
-    }
-    return ['active' => false];
-}
 
 // Process form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
@@ -47,20 +33,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception("File harus berupa HTML (.html)");
                 }
                 
-                // Move uploaded file
-                $target_file = $maintenance_dir . '/index.html';
-                if (move_uploaded_file($file['tmp_name'], $target_file)) {
-                    // Update maintenance status
-                    $status = [
-                        'active' => true,
-                        'activated_at' => time(),
-                        'activated_date' => date('Y-m-d H:i:s')
-                    ];
-                    
-                    file_put_contents($maintenance_dir . '/maintenance_status.json', json_encode($status));
-                    $success = "✅ Maintenance mode diaktifkan!";
+                // Read HTML content
+                $html_content = file_get_contents($file['tmp_name']);
+                
+                if (empty($html_content)) {
+                    throw new Exception("File HTML kosong atau tidak dapat dibaca");
+                }
+                
+                // Enable maintenance in database
+                $result = enable_maintenance_db($html_content);
+                
+                if ($result['success']) {
+                    $success = "✅ Maintenance mode diaktifkan! HTML disimpan di database.";
                 } else {
-                    throw new Exception("Gagal mengupload file");
+                    throw new Exception($result['error']);
                 }
             } else {
                 throw new Exception("Silakan pilih file index.html untuk diupload");
@@ -68,24 +54,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         } 
         elseif (isset($_POST['disable_maintenance'])) {
             // Disable maintenance mode
-            $status_file = $maintenance_dir . '/maintenance_status.json';
-            $index_file = $maintenance_dir . '/index.html';
+            $result = disable_maintenance_db();
             
-            // Archive current file
-            if (file_exists($index_file)) {
-                $archive_dir = $maintenance_dir . '/archive';
-                if (!file_exists($archive_dir)) {
-                    mkdir($archive_dir, 0755, true);
-                }
-                $archive_name = 'index_' . date('Y-m-d_His') . '.html';
-                rename($index_file, $archive_dir . '/' . $archive_name);
+            if ($result['success']) {
+                $success = "✅ Maintenance mode dimatikan!";
+            } else {
+                throw new Exception($result['error']);
             }
+        }
+        elseif (isset($_POST['use_default'])) {
+            // Use default maintenance page
+            $default_html = get_default_maintenance_html();
+            $result = enable_maintenance_db($default_html);
             
-            // Update status
-            $status = ['active' => false];
-            file_put_contents($status_file, json_encode($status));
-            
-            $success = "✅ Maintenance mode dimatikan!";
+            if ($result['success']) {
+                $success = "✅ Maintenance mode diaktifkan dengan template default!";
+            } else {
+                throw new Exception($result['error']);
+            }
         }
         
     } catch (Exception $e) {
@@ -93,7 +79,111 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-$status = get_maintenance_status();
+$status = get_maintenance_status_db();
+
+// Default maintenance HTML template
+function get_default_maintenance_html() {
+    return '<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maintenance - SAZEN Investment</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 600px;
+            width: 90%;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            padding: 40px;
+            text-align: center;
+        }
+        .icon {
+            font-size: 4rem;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 2.2rem;
+        }
+        .message {
+            color: #555;
+            margin-bottom: 25px;
+            font-size: 1.1rem;
+        }
+        .status {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .contact {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #17a2b8;
+        }
+        .footer {
+            margin-top: 30px;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">🔧</div>
+        <h1>Sedang Dalam Pemeliharaan</h1>
+        
+        <div class="message">
+            <p>SAZEN Investment Portfolio Manager sedang dalam proses pemeliharaan untuk peningkatan sistem.</p>
+            <p>Kami akan segera kembali online dalam waktu singkat.</p>
+        </div>
+
+        <div class="status">
+            <strong>Status:</strong> Maintenance Mode Aktif<br>
+            <strong>Perkiraan Selesai:</strong> 1-2 Jam
+        </div>
+
+        <div class="contact">
+            <strong>Butuh Bantuan?</strong><br>
+            Email: support@sazen.com<br>
+            Telepon: +62 123 4567 890
+        </div>
+
+        <div class="footer">
+            <strong>SAZEN v3.1</strong><br>
+            Investment Portfolio Management System
+        </div>
+    </div>
+
+    <script>
+        // Auto reload every 5 minutes to check if maintenance is over
+        setTimeout(function() {
+            window.location.reload();
+        }, 300000);
+    </script>
+</body>
+</html>';
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -140,14 +230,17 @@ $status = get_maintenance_status();
             padding: 12px 24px; border: none; border-radius: 8px; 
             font-size: 1em; font-weight: 600; cursor: pointer; 
             display: inline-flex; align-items: center; gap: 8px; 
+            margin: 5px;
         }
         .btn-primary { background: #007bff; color: white; }
         .btn-danger { background: #dc3545; color: white; }
         .btn-success { background: #28a745; color: white; }
+        .btn-warning { background: #ffc107; color: #212529; }
         .file-upload { 
             border: 2px dashed #dee2e6; border-radius: 8px; padding: 30px; 
             text-align: center; 
         }
+        .action-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -155,7 +248,7 @@ $status = get_maintenance_status();
     <div class="container">
         <div class="header">
             <h1><i class="fas fa-tools"></i> Maintenance System</h1>
-            <p>Kelola mode maintenance untuk website SAZEN</p>
+            <p>Database-Based Maintenance Mode</p>
         </div>
 
         <div class="content">
@@ -171,32 +264,44 @@ $status = get_maintenance_status();
                 </div>
             <?php endif; ?>
 
-            <div class="status-card <?= $status['active'] ? 'status-active' : '' ?>">
-                <h3>Status Saat Ini</h3>
-                <p><strong>Maintenance Mode:</strong> 
-                    <?= $status['active'] ? 
-                        '<span style="color: #dc3545;">AKTIF</span>' : 
-                        '<span style="color: #28a745;">NON-AKTIF</span>' ?>
+            <div class="status-card <?= $status['is_active'] ? 'status-active' : '' ?>">
+                <h3>Status Maintenance</h3>
+                <p><strong>Mode:</strong> 
+                    <?= $status['is_active'] ? 
+                        '<span style="color: #dc3545;">🟢 AKTIF</span>' : 
+                        '<span style="color: #28a745;">🔴 NON-AKTIF</span>' ?>
                 </p>
-                <?php if ($status['active'] && isset($status['activated_date'])): ?>
-                    <p><strong>Diaktifkan:</strong> <?= $status['activated_date'] ?></p>
+                <?php if ($status['is_active'] && $status['activated_at']): ?>
+                    <p><strong>Diaktifkan:</strong> <?= $status['activated_at'] ?></p>
+                    <p><strong>HTML Size:</strong> <?= strlen($status['maintenance_html'] ?? '') ?> bytes</p>
                 <?php endif; ?>
             </div>
 
-            <?php if (!$status['active']): ?>
+            <?php if (!$status['is_active']): ?>
                 <div class="form-group">
-                    <h3><i class="fas fa-power-off"></i> Aktifkan Maintenance</h3>
+                    <h3><i class="fas fa-power-off"></i> Aktifkan Maintenance Mode</h3>
+                    
+                    <div class="action-buttons">
+                        <form method="POST" style="display: inline;">
+                            <button type="submit" name="use_default" class="btn btn-warning">
+                                <i class="fas fa-magic"></i> Gunakan Template Default
+                            </button>
+                        </form>
+                    </div>
+
+                    <p style="margin: 15px 0; text-align: center; color: #666;">- ATAU -</p>
+
                     <form method="POST" enctype="multipart/form-data">
                         <div class="file-upload">
                             <i class="fas fa-file-upload" style="font-size: 3em; color: #6c757d; margin-bottom: 15px;"></i>
-                            <p>Upload file index.html untuk halaman maintenance</p>
+                            <p>Upload file HTML custom untuk halaman maintenance</p>
                             <input type="file" name="maintenance_file" accept=".html" class="form-control" required>
                             <small style="display: block; margin-top: 10px; color: #6c757d;">
-                                Format: HTML file (index.html) - Maksimal 5MB
+                                Format: HTML file (.html) - Maksimal 5MB
                             </small>
                         </div>
                         <button type="submit" name="enable_maintenance" class="btn btn-danger">
-                            <i class="fas fa-play-circle"></i> Aktifkan Maintenance
+                            <i class="fas fa-play-circle"></i> Aktifkan Maintenance Custom
                         </button>
                     </form>
                 </div>
@@ -204,11 +309,19 @@ $status = get_maintenance_status();
                 <div class="form-group">
                     <h3><i class="fas fa-times-circle"></i> Non-aktifkan Maintenance</h3>
                     <form method="POST">
-                        <p>Website akan kembali normal.</p>
+                        <p>Website akan kembali normal dan HTML akan disimpan di database untuk riwayat.</p>
                         <button type="submit" name="disable_maintenance" class="btn btn-success">
-                            <i class="fas fa-stop-circle"></i> Matikan Maintenance
+                            <i class="fas fa-stop-circle"></i> Matikan Maintenance Mode
                         </button>
                     </form>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                        <h4><i class="fas fa-eye"></i> Preview HTML</h4>
+                        <textarea class="form-control" rows="6" readonly style="font-family: monospace; font-size: 0.8em;">
+<?= htmlspecialchars(substr($status['maintenance_html'] ?? '', 0, 500)) . '...' ?>
+                        </textarea>
+                        <small>Preview 500 karakter pertama</small>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>

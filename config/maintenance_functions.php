@@ -3,7 +3,10 @@
  * Maintenance Functions - Database Based
  */
 
-require_once "koneksi.php";
+// Pastikan koneksi database sudah ada
+if (!isset($koneksi)) {
+    require_once "koneksi.php";
+}
 
 /**
  * Get maintenance status from database
@@ -62,7 +65,9 @@ function enable_maintenance_db($html_content) {
         return ['success' => true, 'message' => 'Maintenance mode diaktifkan'];
         
     } catch (Exception $e) {
-        $koneksi->rollBack();
+        if ($koneksi->inTransaction()) {
+            $koneksi->rollBack();
+        }
         error_log("Enable Maintenance DB Error: " . $e->getMessage());
         return ['success' => false, 'error' => $e->getMessage()];
     }
@@ -93,6 +98,14 @@ function disable_maintenance_db() {
  * Serve maintenance page if active
  */
 function serve_maintenance_page_if_active() {
+    // Skip maintenance check for these pages
+    $allowed_pages = ['maintenance.php', 'auth.php', 'login.php', 'admin/auth.php'];
+    $current_page = basename($_SERVER['PHP_SELF']);
+    
+    if (in_array($current_page, $allowed_pages)) {
+        return;
+    }
+    
     $status = get_maintenance_status_db();
     
     if ($status['is_active'] && !empty($status['maintenance_html'])) {
@@ -108,24 +121,108 @@ function serve_maintenance_page_if_active() {
 }
 
 /**
- * Check if current user can bypass maintenance (admin users)
+ * Default maintenance HTML template
  */
-function can_bypass_maintenance() {
-    session_start();
-    
-    // Allow access to maintenance.php and auth.php
-    $allowed_pages = ['maintenance.php', 'auth.php', 'login.php'];
-    $current_page = basename($_SERVER['PHP_SELF']);
-    
-    if (in_array($current_page, $allowed_pages)) {
-        return true;
-    }
-    
-    // Allow admin users to bypass maintenance
-    if (isset($_SESSION['user_id']) && ($_SESSION['role'] ?? '') == 'admin') {
-        return true;
-    }
-    
-    return false;
+function get_default_maintenance_html() {
+    return '<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maintenance - SAZEN Investment</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 600px;
+            width: 90%;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            padding: 40px;
+            text-align: center;
+        }
+        .icon {
+            font-size: 4rem;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 2.2rem;
+        }
+        .message {
+            color: #555;
+            margin-bottom: 25px;
+            font-size: 1.1rem;
+        }
+        .status {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .contact {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #17a2b8;
+        }
+        .footer {
+            margin-top: 30px;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">🔧</div>
+        <h1>Sedang Dalam Pemeliharaan</h1>
+        
+        <div class="message">
+            <p>SAZEN Investment Portfolio Manager sedang dalam proses pemeliharaan untuk peningkatan sistem.</p>
+            <p>Kami akan segera kembali online dalam waktu singkat.</p>
+        </div>
+
+        <div class="status">
+            <strong>Status:</strong> Maintenance Mode Aktif<br>
+            <strong>Perkiraan Selesai:</strong> 1-2 Jam
+        </div>
+
+        <div class="contact">
+            <strong>Butuh Bantuan?</strong><br>
+            Email: support@sazen.com<br>
+            Telepon: +62 123 4567 890
+        </div>
+
+        <div class="footer">
+            <strong>SAZEN v3.1</strong><br>
+            Investment Portfolio Management System
+        </div>
+    </div>
+
+    <script>
+        // Auto reload every 5 minutes to check if maintenance is over
+        setTimeout(function() {
+            window.location.reload();
+        }, 300000);
+    </script>
+</body>
+</html>';
 }
 ?>

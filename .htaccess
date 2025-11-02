@@ -18,10 +18,11 @@ DirectoryIndex index.php index.html
 Options -Indexes
 
 # ===================================
+# ===================================
 # MAINTENANCE MODE
 # ===================================
 
-# Maintenance mode check - jika file maintenance/index.html ada dan status active
+# Maintenance mode - hanya aktif jika file maintenance/index.html ada
 RewriteCond %{REQUEST_URI} !^/maintenance\.php
 RewriteCond %{REQUEST_URI} !^/auth\.php
 RewriteCond %{REQUEST_URI} !^/css/
@@ -30,7 +31,6 @@ RewriteCond %{REQUEST_URI} !^/images/
 RewriteCond %{REQUEST_URI} !^/uploads/
 RewriteCond %{REQUEST_URI} !^/maintenance/
 RewriteCond %{DOCUMENT_ROOT}/maintenance/index.html -f
-RewriteCond %{DOCUMENT_ROOT}/maintenance/maintenance_status.json -f
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^(.*)$ /maintenance/index.html [L,R=503]
 
@@ -38,7 +38,6 @@ RewriteRule ^(.*)$ /maintenance/index.html [L,R=503]
 <IfModule mod_headers.c>
     <Files "maintenance/index.html">
         Header set Retry-After "3600"
-        Header set X-Maintenance-Mode "Active"
     </Files>
 </IfModule>
 

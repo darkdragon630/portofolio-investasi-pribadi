@@ -4,14 +4,16 @@
  */
 
 session_start();
-require_once "config/koneksi.php";
-require_once "config/maintenance_functions.php";
 
-// Authentication Check - hanya admin yang bisa akses
+// Authentication Check - hanya user yang login bisa akses (TIDAK DIUBAH)
 if (!isset($_SESSION['user_id'])) {
     header("Location: admin/auth.php");
     exit;
 }
+
+// Include config files
+require_once "config/koneksi.php";
+require_once "config/maintenance_functions.php";
 
 $error = '';
 $success = '';
@@ -49,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception($result['error']);
                 }
             } else {
-                throw new Exception("Silakan pilih file index.html untuk diupload");
+                throw new Exception("Silakan pilih file HTML untuk diupload");
             }
         } 
         elseif (isset($_POST['disable_maintenance'])) {
@@ -80,110 +82,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 $status = get_maintenance_status_db();
-
-// Default maintenance HTML template
-function get_default_maintenance_html() {
-    return '<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maintenance - SAZEN Investment</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #333;
-            line-height: 1.6;
-        }
-        .container {
-            max-width: 600px;
-            width: 90%;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
-            padding: 40px;
-            text-align: center;
-        }
-        .icon {
-            font-size: 4rem;
-            color: #667eea;
-            margin-bottom: 20px;
-        }
-        h1 {
-            color: #2c3e50;
-            margin-bottom: 15px;
-            font-size: 2.2rem;
-        }
-        .message {
-            color: #555;
-            margin-bottom: 25px;
-            font-size: 1.1rem;
-        }
-        .status {
-            background: #fff3cd;
-            color: #856404;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border-left: 4px solid #ffc107;
-        }
-        .contact {
-            background: #d1ecf1;
-            color: #0c5460;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border-left: 4px solid #17a2b8;
-        }
-        .footer {
-            margin-top: 30px;
-            color: #6c757d;
-            font-size: 0.9rem;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="icon">🔧</div>
-        <h1>Sedang Dalam Pemeliharaan</h1>
-        
-        <div class="message">
-            <p>SAZEN Investment Portfolio Manager sedang dalam proses pemeliharaan untuk peningkatan sistem.</p>
-            <p>Kami akan segera kembali online dalam waktu singkat.</p>
-        </div>
-
-        <div class="status">
-            <strong>Status:</strong> Maintenance Mode Aktif<br>
-            <strong>Perkiraan Selesai:</strong> 1-2 Jam
-        </div>
-
-        <div class="contact">
-            <strong>Butuh Bantuan?</strong><br>
-            Email: support@sazen.com<br>
-            Telepon: +62 123 4567 890
-        </div>
-
-        <div class="footer">
-            <strong>SAZEN v3.1</strong><br>
-            Investment Portfolio Management System
-        </div>
-    </div>
-
-    <script>
-        // Auto reload every 5 minutes to check if maintenance is over
-        setTimeout(function() {
-            window.location.reload();
-        }, 300000);
-    </script>
-</body>
-</html>';
-}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -315,13 +213,15 @@ function get_default_maintenance_html() {
                         </button>
                     </form>
                     
+                    <?php if (!empty($status['maintenance_html'])): ?>
                     <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                         <h4><i class="fas fa-eye"></i> Preview HTML</h4>
                         <textarea class="form-control" rows="6" readonly style="font-family: monospace; font-size: 0.8em;">
-<?= htmlspecialchars(substr($status['maintenance_html'] ?? '', 0, 500)) . '...' ?>
+<?= htmlspecialchars(substr($status['maintenance_html'], 0, 500)) . '...' ?>
                         </textarea>
                         <small>Preview 500 karakter pertama</small>
                     </div>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
         </div>

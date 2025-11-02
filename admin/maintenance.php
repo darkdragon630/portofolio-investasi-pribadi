@@ -127,6 +127,87 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 throw new Exception($result['error'] ?? "Unknown error occurred");
             }
         }
+        elseif (isset($_POST['cleanup_snapshots'])) {
+            // Cleanup old snapshots
+            if (!function_exists('cleanup_old_snapshots')) {
+                // Include auto_calculate_investment.php
+                $auto_calc_file = __DIR__ . "/../config/auto_calculate_investment.php";
+                if (file_exists($auto_calc_file)) {
+                    require_once $auto_calc_file;
+                } else {
+                    throw new Exception("Auto calculate file not found");
+                }
+            }
+            
+            $keep_days = isset($_POST['keep_days']) ? intval($_POST['keep_days']) : 90;
+            $deleted = cleanup_old_snapshots($koneksi, $keep_days);
+            $success = "✅ Berhasil menghapus {$deleted} snapshot lama (> {$keep_days} hari)";
+        }
+        elseif (isset($_POST['initialize_snapshots'])) {
+            // Initialize snapshots for existing investments
+            if (!function_exists('initialize_snapshots_for_existing_investments')) {
+                // Include auto_calculate_investment.php
+                $auto_calc_file = __DIR__ . "/../config/auto_calculate_investment.php";
+                if (file_exists($auto_calc_file)) {
+                    require_once $auto_calc_file;
+                } else {
+                    throw new Exception("Auto calculate file not found");
+                }
+            }
+            
+            $result = initialize_snapshots_for_existing_investments($koneksi);
+            
+            if ($result['success']) {
+                $success = "✅ Berhasil inisialisasi {$result['initialized']} dari {$result['total']} investasi";
+            } else {
+                throw new Exception($result['error'] ?? "Unknown error occurred");
+            }
+        }
+        elseif (isset($_POST['backup_database'])) {
+            // Database Backup
+            $result = create_database_backup($koneksi);
+            
+            if ($result['success']) {
+                // Download the backup file
+                header('Content-Type: application/sql');
+                header('Content-Disposition: attachment; filename="' . $result['filename'] . '"');
+                header('Content-Length: ' . strlen($result['sql_content']));
+                echo $result['sql_content'];
+                exit;
+            } else {
+                throw new Exception($result['error'] ?? "Backup failed");
+            }
+        }
+        elseif (isset($_POST['run_health_check'])) {
+            // System Health Check
+            $health_result = run_system_health_check($koneksi);
+            $_SESSION['health_check_result'] = $health_result;
+            $success = "✅ Health check selesai! Lihat hasil di bawah.";
+        }
+        elseif (isset($_POST['validate_data'])) {
+            // Data Validation & Repair
+            $validation_result = validate_and_repair_data($koneksi);
+            $_SESSION['validation_result'] = $validation_result;
+            $success = "✅ Validasi data selesai! {$validation_result['fixed']} masalah diperbaiki.";
+        }
+        elseif (isset($_POST['save_notifications'])) {
+            // Save notification settings
+            $settings = [
+                'email_enabled' => isset($_POST['email_enabled']) ? 1 : 0,
+                'email_address' => sanitize_input($_POST['email_address'] ?? ''),
+                'notify_maintenance' => isset($_POST['notify_maintenance']) ? 1 : 0,
+                'notify_errors' => isset($_POST['notify_errors']) ? 1 : 0,
+                'notify_backup' => isset($_POST['notify_backup']) ? 1 : 0
+            ];
+            
+            $result = save_notification_settings($koneksi, $settings);
+            
+            if ($result['success']) {
+                $success = "✅ Pengaturan notifikasi berhasil disimpan!";
+            } else {
+                throw new Exception($result['error'] ?? "Failed to save settings");
+            }
+        }
         
     } catch (Exception $e) {
         error_log("Maintenance system error: " . $e->getMessage());
@@ -388,6 +469,129 @@ header('X-XSS-Protection: 1; mode=block');
             
             <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center; color: #6c757d;">
                 <small><i class="fas fa-shield-alt"></i> SAZEN Maintenance System v3.1 - Database Edition</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Database Maintenance Tools Section -->
+    <div class="container" style="margin-top: 20px;">
+        <div class="content">
+            <div class="form-group">
+                <h3><i class="fas fa-database"></i> Database Maintenance Tools</h3>
+                <p style="margin-bottom: 20px; color: #6c757d;">
+                    <i class="fas fa-info-circle"></i> Tools untuk membersihkan dan menginisialisasi data snapshot investasi
+                </p>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                    <!-- Cleanup Snapshots Tool -->
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; border-left: 4px solid #ffc107;">
+                        <h4 style="margin-bottom: 15px; color: #2c3e50;">
+                            <i class="fas fa-broom"></i> Cleanup Old Snapshots
+                        </h4>
+                        <p style="font-size: 0.9em; color: #6c757d; margin-bottom: 15px;">
+                            Hapus snapshot lama untuk menghemat storage database. Snapshot yang lebih tua dari periode yang ditentukan akan dihapus.
+                        </p>
+                        <form method="POST" onsubmit="return confirm('Apakah Anda yakin ingin menghapus snapshot lama?');">
+                            <div class="form-group" style="margin-bottom: 15px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 600;">
+                                    Simpan snapshot (hari):
+                                </label>
+                                <input type="number" name="keep_days" value="90" min="30" max="365" 
+                                       class="form-control" required 
+                                       style="width: 100%;">
+                                <small style="color: #6c757d; display: block; margin-top: 5px;">
+                                    Default: 90 hari. Snapshot lebih lama akan dihapus.
+                                </small>
+                            </div>
+                            <button type="submit" name="cleanup_snapshots" class="btn btn-warning">
+                                <i class="fas fa-trash-alt"></i> Cleanup Snapshots
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Initialize Snapshots Tool -->
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; border-left: 4px solid #17a2b8;">
+                        <h4 style="margin-bottom: 15px; color: #2c3e50;">
+                            <i class="fas fa-sync-alt"></i> Initialize Snapshots
+                        </h4>
+                        <p style="font-size: 0.9em; color: #6c757d; margin-bottom: 15px;">
+                            Inisialisasi snapshot untuk semua investasi aktif. Jalankan sekali setelah migrasi database atau jika ada investasi tanpa snapshot.
+                        </p>
+                        <form method="POST" onsubmit="return confirm('Proses ini akan menghitung ulang semua investasi aktif. Lanjutkan?');">
+                            <div style="background: #fff3cd; color: #856404; padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 0.85em;">
+                                <i class="fas fa-exclamation-triangle"></i> 
+                                <strong>Perhatian:</strong> Proses ini mungkin memakan waktu jika ada banyak investasi.
+                            </div>
+                            <button type="submit" name="initialize_snapshots" class="btn btn-primary">
+                                <i class="fas fa-rocket"></i> Initialize Snapshots
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Database Statistics -->
+                <?php
+                try {
+                    // Get snapshot statistics
+                    $sql_snapshot_stats = "SELECT 
+                        COUNT(*) as total_snapshots,
+                        COUNT(DISTINCT investasi_id) as investments_with_snapshots,
+                        MIN(tanggal_snapshot) as oldest_snapshot,
+                        MAX(tanggal_snapshot) as newest_snapshot
+                        FROM investasi_snapshot_harian";
+                    $stmt = $koneksi->prepare($sql_snapshot_stats);
+                    $stmt->execute();
+                    $snapshot_stats = $stmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    // Get total active investments
+                    $sql_total_inv = "SELECT COUNT(*) as total FROM investasi WHERE status = 'aktif'";
+                    $stmt = $koneksi->prepare($sql_total_inv);
+                    $stmt->execute();
+                    $total_inv = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+                    
+                    if ($snapshot_stats && $snapshot_stats['total_snapshots'] > 0):
+                ?>
+                <div style="margin-top: 20px; background: #e7f3ff; padding: 20px; border-radius: 10px; border-left: 4px solid #2196f3;">
+                    <h4 style="margin-bottom: 15px; color: #2c3e50;">
+                        <i class="fas fa-chart-bar"></i> Statistik Snapshot
+                    </h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                        <div>
+                            <div style="font-size: 0.85em; color: #64748b; margin-bottom: 5px;">Total Snapshots</div>
+                            <div style="font-size: 1.5em; font-weight: 700; color: #2c3e50;">
+                                <?= number_format($snapshot_stats['total_snapshots']) ?>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.85em; color: #64748b; margin-bottom: 5px;">Investasi dengan Snapshot</div>
+                            <div style="font-size: 1.5em; font-weight: 700; color: #2c3e50;">
+                                <?= $snapshot_stats['investments_with_snapshots'] ?> / <?= $total_inv ?>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.85em; color: #64748b; margin-bottom: 5px;">Snapshot Tertua</div>
+                            <div style="font-size: 1.2em; font-weight: 600; color: #2c3e50;">
+                                <?= date('d M Y', strtotime($snapshot_stats['oldest_snapshot'])) ?>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.85em; color: #64748b; margin-bottom: 5px;">Snapshot Terbaru</div>
+                            <div style="font-size: 1.2em; font-weight: 600; color: #2c3e50;">
+                                <?= date('d M Y', strtotime($snapshot_stats['newest_snapshot'])) ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <?php 
+                    endif;
+                } catch (Exception $e) {
+                    error_log("Failed to get snapshot stats: " . $e->getMessage());
+                }
+                ?>
+            </div>
+            
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center; color: #6c757d;">
+                <small><i class="fas fa-tools"></i> Advanced Database Maintenance Tools Enabled</small>
             </div>
         </div>
     </div>

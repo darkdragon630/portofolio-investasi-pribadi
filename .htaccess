@@ -54,6 +54,12 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
     Deny from all
 </FilesMatch>
 
+# Di .htaccess, tambahkan sebelum blokir config
+<Files "maintenance.php">
+    Order allow,deny
+    Allow from all
+</Files>
+
 # Block access to config folder
 <DirectoryMatch "^.*/config(/|$)">
     Order deny,allow

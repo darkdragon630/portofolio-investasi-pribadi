@@ -1,6 +1,6 @@
 /**
  * SAZEN Investment Portfolio Manager v3.0
- * Form Kerugian - JavaScript Handler
+ * Form Kerugian - JavaScript Handler - FIXED FOR ZERO INPUT
  */
 
 // ===================================
@@ -32,7 +32,7 @@ document.getElementById('investasi_id').addEventListener('change', function() {
 
 
 // ===================================
-// AUTO-CALCULATE PERCENTAGE
+// AUTO-CALCULATE PERCENTAGE (FIXED)
 // ===================================
 document.getElementById('jumlah_kerugian').addEventListener('blur', function() {
     const select = document.getElementById('investasi_id');
@@ -45,17 +45,19 @@ document.getElementById('jumlah_kerugian').addEventListener('blur', function() {
     const amount = parseFloat(selected?.dataset.jumlah || 0);
     const lossRaw = this.value.trim();
     
-    if (!lossRaw || amount <= 0) return;
+    // ✅ FIXED: Jangan skip kalau lossRaw = "0" atau "0,00"
+    if (lossRaw === '' || amount <= 0) return;
     
     // Parse loss (remove dots and replace comma with dot)
     const loss = parseFloat(
-    lossRaw
-        .replace(/[^\d,.]/g, '')
-        .replace(/\./g, '')
-        .replace(/,/g, '.')
-) || 0;
+        lossRaw
+            .replace(/[^\d,.]/g, '')
+            .replace(/\./g, '')
+            .replace(/,/g, '.')
+    );
     
-    if (loss >= 0 || loss === 0) {
+    // ✅ FIXED: Pastikan NaN check dan terima nilai 0
+    if (!isNaN(loss) && loss >= 0) {
         const percentage = amount > 0 ? (loss / amount) * 100 : 0;
         pctInput.value = percentage.toFixed(2);
     }
@@ -63,11 +65,10 @@ document.getElementById('jumlah_kerugian').addEventListener('blur', function() {
 
 
 // ===================================
-// CURRENCY INPUT FORMATTER
+// CURRENCY INPUT FORMATTER (FIXED)
 // ===================================
 const jumlahInput = document.getElementById('jumlah_kerugian');
 
-// ✅ UPDATE BAGIAN INI
 jumlahInput.addEventListener('blur', function() {
     let v = this.value
         .replace(/[^\d,.]/g, '')   // buang selain digit, koma, titik
@@ -77,17 +78,30 @@ jumlahInput.addEventListener('blur', function() {
 
     const num = parseFloat(v);
     
-    // ✅ Tangani nilai 0 secara eksplisit
-    if (v.trim() === '' || isNaN(num)) {
-        this.value = '0,00';
+    // ✅ FIXED: Jangan set ke "0,00" kalau user belum input apa-apa
+    if (v.trim() === '') {
+        // Biarkan kosong, jangan auto-fill
+        return;
+    }
+    
+    // ✅ Handle nilai 0 dengan benar
+    if (isNaN(num)) {
+        this.value = '0';
     } else if (num === 0) {
-        this.value = '0,00';  // Format khusus untuk 0
+        this.value = '0';  // Simpan sebagai "0" aja, bukan "0,00"
     } else {
-        this.value = num.toLocaleString('id-ID', { minimumFractionDigits: 2 });
+        this.value = num.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     }
 });
 
 jumlahInput.addEventListener('focus', function() {
+    // ✅ FIXED: Jangan manipulasi kalau value = "0"
+    if (this.value === '0' || this.value === '0,00') {
+        this.value = '0';
+        this.select(); // Auto-select untuk mudah diganti
+        return;
+    }
+    
     this.value = this.value
         .replace(/[^\d,.]/g, '')
         .replace(/\./g, '')   // buang titik ribuan
@@ -218,31 +232,45 @@ function handleDrop(e) {
 
 
 // ===================================
-// FORM VALIDATION
+// FORM VALIDATION (FIXED)
 // ===================================
-// ✅ SESUDAH (BENAR - menerima nilai 0)
 document.querySelector('.data-form').addEventListener('submit', function(e) {
-   const raw = document.getElementById('jumlah_kerugian').value
-                .replace(/[^\d,.]/g, '')
-                .replace(/\./g, '')
-                .replace(/,/g, '.');
-   const jumlah = parseFloat(raw);
+    const rawValue = document.getElementById('jumlah_kerugian').value.trim();
     
-    // Cek apakah input kosong atau NaN
-    if (raw.trim() === '' || isNaN(jumlah)) {
+    // ✅ FIXED: Cek kalau field kosong
+    if (rawValue === '') {
         e.preventDefault();
-        alert('Jumlah kerugian harus diisi!');
+        alert('❌ Jumlah kerugian harus diisi!');
+        document.getElementById('jumlah_kerugian').focus();
         return false;
     }
     
-    // Cek apakah nilai negatif
+    // Parse value
+    const raw = rawValue
+        .replace(/[^\d,.]/g, '')
+        .replace(/\./g, '')
+        .replace(/,/g, '.');
+    
+    const jumlah = parseFloat(raw);
+    
+    // ✅ FIXED: Cek NaN setelah parsing
+    if (isNaN(jumlah)) {
+        e.preventDefault();
+        alert('❌ Format jumlah kerugian tidak valid!');
+        document.getElementById('jumlah_kerugian').focus();
+        return false;
+    }
+    
+    // ✅ FIXED: HANYA tolak nilai negatif, terima 0 dan positif
     if (jumlah < 0) {
         e.preventDefault();
-        alert('Jumlah kerugian tidak boleh negatif!');
+        alert('❌ Jumlah kerugian tidak boleh negatif!');
+        document.getElementById('jumlah_kerugian').focus();
         return false;
     }
     
-    // Nilai 0 atau positif diperbolehkan ✅
+    // ✅ Nilai 0 dan positif diperbolehkan
+    console.log('✅ Form valid, jumlah kerugian:', jumlah);
 });
 
 

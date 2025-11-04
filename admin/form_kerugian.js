@@ -55,8 +55,8 @@ document.getElementById('jumlah_kerugian').addEventListener('blur', function() {
         .replace(/,/g, '.')
 ) || 0;
     
-    if (loss >= 0) {
-        const percentage = (loss / amount) * 100;
+    if (loss >= 0 || loss === 0) {
+        const percentage = amount > 0 ? (loss / amount) * 100 : 0;
         pctInput.value = percentage.toFixed(2);
     }
 });
@@ -67,6 +67,7 @@ document.getElementById('jumlah_kerugian').addEventListener('blur', function() {
 // ===================================
 const jumlahInput = document.getElementById('jumlah_kerugian');
 
+// ✅ UPDATE BAGIAN INI
 jumlahInput.addEventListener('blur', function() {
     let v = this.value
         .replace(/[^\d,.]/g, '')   // buang selain digit, koma, titik
@@ -74,8 +75,16 @@ jumlahInput.addEventListener('blur', function() {
         .replace(/\./g, '')        // buang titik ribuan sementara
         .replace(/#/g, '.');       // kembalikan koma jadi titik desimal
 
-    const num = parseFloat(v) || 0;
-    this.value = num.toLocaleString('id-ID', { minimumFractionDigits: 2 });
+    const num = parseFloat(v);
+    
+    // ✅ Tangani nilai 0 secara eksplisit
+    if (v.trim() === '' || isNaN(num)) {
+        this.value = '0,00';
+    } else if (num === 0) {
+        this.value = '0,00';  // Format khusus untuk 0
+    } else {
+        this.value = num.toLocaleString('id-ID', { minimumFractionDigits: 2 });
+    }
 });
 
 jumlahInput.addEventListener('focus', function() {
@@ -211,18 +220,29 @@ function handleDrop(e) {
 // ===================================
 // FORM VALIDATION
 // ===================================
+// ✅ SESUDAH (BENAR - menerima nilai 0)
 document.querySelector('.data-form').addEventListener('submit', function(e) {
    const raw = document.getElementById('jumlah_kerugian').value
                 .replace(/[^\d,.]/g, '')
                 .replace(/\./g, '')
                 .replace(/,/g, '.');
-   const jumlah = parseFloat(raw) || 0;
+   const jumlah = parseFloat(raw);
     
-    if (jumlah <= 0) {
+    // Cek apakah input kosong atau NaN
+    if (raw.trim() === '' || isNaN(jumlah)) {
         e.preventDefault();
-        alert('Jumlah kerugian harus diisi dan tidak boleh negatif!');
+        alert('Jumlah kerugian harus diisi!');
         return false;
     }
+    
+    // Cek apakah nilai negatif
+    if (jumlah < 0) {
+        e.preventDefault();
+        alert('Jumlah kerugian tidak boleh negatif!');
+        return false;
+    }
+    
+    // Nilai 0 atau positif diperbolehkan ✅
 });
 
 

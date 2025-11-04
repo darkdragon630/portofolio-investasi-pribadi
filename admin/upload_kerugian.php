@@ -68,8 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $status = $_POST['status'] ?? 'realized';
         
         // Validation
+        // ✅ FIXED VALIDATION
         if (empty($investasi_id) || empty($kategori_id) || empty($judul_kerugian) || 
-            $jumlah_kerugian < 0 || !isset($jumlah_kerugian) || empty($tanggal_kerugian)) {
+            !is_numeric($jumlah_kerugian) || $jumlah_kerugian < 0 || empty($tanggal_kerugian)) {
             throw new Exception('Semua field wajib diisi. Jumlah kerugian harus ≥ 0.');
         }
         

@@ -1,13 +1,14 @@
 <?php
 /**
- * SAZEN Investment Portfolio Manager v3.0
+ * SAZEN Investment Portfolio Manager v3.1
  * Edit Kerugian - Database Storage
- * FIXED: Currency parsing issue
+ * FIXED: Currency parsing issue - ACCEPT ZERO VALUE
  */
 
 session_start();
 require_once "../config/koneksi.php";
 require_once "../config/functions.php";
+require_once "../config/auto_calculate_investment.php"; // ✅ NEW: Auto-calc functions
 
 // Authentication Check
 if (!isset($_SESSION['user_id'])) {
@@ -69,8 +70,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $judul_kerugian = sanitize_input($_POST['judul_kerugian'] ?? '');
         $deskripsi = sanitize_input($_POST['deskripsi'] ?? '');
         
-        // USE FIXED PARSER
+        // ✅ USE FIXED PARSER dengan fallback
         $jumlah_kerugian = parse_currency_fixed($_POST['jumlah_kerugian'] ?? '0');
+        
+        // ✅ Pastikan 0 adalah nilai valid
+        if ($jumlah_kerugian === false || $jumlah_kerugian === null) {
+            $jumlah_kerugian = 0;
+        }
         
         // Debug log (optional - remove in production)
         error_log("Edit Kerugian - Original input: " . ($_POST['jumlah_kerugian'] ?? '0'));
@@ -87,9 +93,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $sumber_kerugian = $_POST['sumber_kerugian'] ?? 'lainnya';
         $status = $_POST['status'] ?? 'realized';
         
-        // Validation
+        // ✅ FIXED VALIDATION - Accept 0, reject negative and non-numeric
         if (empty($investasi_id) || empty($kategori_id) || empty($judul_kerugian) || 
-            $jumlah_kerugian < 0 || empty($tanggal_kerugian)) {
+            !is_numeric($jumlah_kerugian) || $jumlah_kerugian < 0 || empty($tanggal_kerugian)) {
             throw new Exception('Semua field wajib diisi. Jumlah kerugian harus ≥ 0.');
         }
         
@@ -102,6 +108,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             if ($invest_data && $invest_data['jumlah'] > 0) {
                 $persentase_kerugian = $jumlah_kerugian / $invest_data['jumlah'];
+            } else {
+                // ✅ Handle case jika modal investasi = 0
+                $persentase_kerugian = 0;
             }
         }
         
@@ -111,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         if (isset($_FILES['bukti_file']) && $_FILES['bukti_file']['error'] !== UPLOAD_ERR_NO_FILE) {
             try {
-                $bukti_file_data = file_get_contents($_FILES['bukti_file']['tmp_name']);
+                $bukti_file_data = handle_file_upload_to_db($_FILES['bukti_file']);
                 $file_updated = true;
             } catch (Exception $e) {
                 throw new Exception("Gagal upload bukti: " . $e->getMessage());
@@ -135,19 +144,39 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     tanggal_kerugian = ?, 
                     sumber_kerugian = ?, 
                     status = ?, 
-                    bukti_file = ?
+                    bukti_file = ?,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?";
         
         $stmt = $koneksi->prepare($sql);
-        if ($stmt->execute([
+        $result = $stmt->execute([
             $investasi_id, $kategori_id, $judul_kerugian, $deskripsi,
             $jumlah_kerugian, $persentase_kerugian, $tanggal_kerugian,
             $sumber_kerugian, $status, $bukti_file_data, $kerugian_id
-        ])) {
+        ]);
+        
+        if ($result) {
+            // ✅ AUTO RECALCULATE INVESTMENT
+            $calc_result = trigger_after_loss_added($koneksi, $kerugian_id);
+            
+            if (!$calc_result['success']) {
+                throw new Exception("Gagal recalculate: " . $calc_result['error']);
+            }
+            
+            // Success message with new calculated values
             $msg = "✅ Kerugian berhasil diperbarui!";
             if ($file_updated) {
                 $msg .= $bukti_file_data ? " 📎 Bukti diperbarui" : " 🗑️ Bukti dihapus";
             }
+            
+            // ✅ Tambah info jika nilai kerugian = 0
+            if ($jumlah_kerugian == 0) {
+                $msg .= "\n💡 Kerugian tercatat dengan nilai Rp 0";
+            }
+            
+            $msg .= "\n📊 Nilai investasi diupdate otomatis: " . 
+                    format_currency($calc_result['new_value']) . 
+                    " (ROI: " . number_format($calc_result['roi'], 2) . "%)";
             
             redirect_with_message("../dashboard.php", "success", $msg);
         } else {
@@ -169,7 +198,7 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edit Kerugian - SAZEN v3.0</title>
+    <title>Edit Kerugian - SAZEN v3.1</title>
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -191,20 +220,21 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                 </div>
                 <h1>Edit Kerugian</h1>
                 <p>Perbarui data kerugian investasi Anda</p>
+                <span class="version-badge">v3.1 - Auto Calculate</span>
             </div>
 
             <!-- ===== MESSAGES ===== -->
             <?php if ($error): ?>
                 <div class="alert alert-error">
                     <i class="fas fa-exclamation-circle"></i>
-                    <span><?= htmlspecialchars($error) ?></span>
+                    <span><?= nl2br(htmlspecialchars($error)) ?></span>
                 </div>
             <?php endif; ?>
 
             <?php if ($success): ?>
                 <div class="alert alert-success">
                     <i class="fas fa-check-circle"></i>
-                    <span><?= htmlspecialchars($success) ?></span>
+                    <span><?= nl2br(htmlspecialchars($success)) ?></span>
                 </div>
             <?php endif; ?>
 
@@ -271,10 +301,11 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                                name="jumlah_kerugian" 
                                id="jumlah_kerugian" 
                                class="form-control" 
-                               placeholder="Contoh: 1500000 atau 1.500.000"
-                               value="<?= number_format($kerugian['jumlah_kerugian'], 0, ',', '.') ?>" 
-                               required>
-                        <small class="form-hint">Format bebas: 4, 1500000, atau 1.500.000</small>
+                               placeholder="Contoh: 0, 1500000, atau 1.500.000"
+                               value="<?= $kerugian['jumlah_kerugian'] == 0 ? '0' : number_format($kerugian['jumlah_kerugian'], 0, ',', '.') ?>" 
+                               required
+                               min="0">
+                        <small class="form-hint">Format bebas: 0, 1500000, atau 1.500.000 (nilai 0 diperbolehkan)</small>
                     </div>
                     
                     <div class="form-group">
@@ -315,7 +346,7 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                         Sumber Kerugian *
                     </label>
                     <div class="radio-grid">
-                        <label class="radio-card">
+                        <label class="radio-card <?= $kerugian['sumber_kerugian'] == 'capital_loss' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_kerugian" 
                                    value="capital_loss" 
@@ -327,7 +358,7 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                             </div>
                         </label>
                         
-                        <label class="radio-card">
+                        <label class="radio-card <?= $kerugian['sumber_kerugian'] == 'biaya_admin' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_kerugian" 
                                    value="biaya_admin" 
@@ -339,7 +370,7 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                             </div>
                         </label>
                         
-                        <label class="radio-card">
+                        <label class="radio-card <?= $kerugian['sumber_kerugian'] == 'biaya_transaksi' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_kerugian" 
                                    value="biaya_transaksi" 
@@ -351,7 +382,7 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                             </div>
                         </label>
                         
-                        <label class="radio-card">
+                        <label class="radio-card <?= $kerugian['sumber_kerugian'] == 'penurunan_nilai' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_kerugian" 
                                    value="penurunan_nilai" 
@@ -363,7 +394,7 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                             </div>
                         </label>
                         
-                        <label class="radio-card">
+                        <label class="radio-card <?= $kerugian['sumber_kerugian'] == 'lainnya' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_kerugian" 
                                    value="lainnya" 
@@ -384,7 +415,7 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                         Status *
                     </label>
                     <div class="radio-grid status-grid">
-                        <label class="radio-card">
+                        <label class="radio-card <?= $kerugian['status'] == 'realized' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="status" 
                                    value="realized" 
@@ -396,7 +427,7 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                             </div>
                         </label>
                         
-                        <label class="radio-card">
+                        <label class="radio-card <?= $kerugian['status'] == 'unrealized' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="status" 
                                    value="unrealized" 
@@ -498,6 +529,14 @@ $persentase_display = $kerugian['persentase_kerugian'] ?
                 fileLabel.style.pointerEvents = 'auto';
             }
         });
+        
+        // ✅ Override default date behavior for edit form
+        // Do NOT set default date on edit page
+        const tanggalInput = document.getElementById('tanggal_kerugian');
+        if (tanggalInput && !tanggalInput.value) {
+            // Only set today if field is somehow empty (shouldn't happen in edit mode)
+            tanggalInput.value = new Date().toISOString().split('T')[0];
+        }
     </script>
 </body>
 </html>

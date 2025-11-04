@@ -47,6 +47,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         // USE FIXED PARSER
         $jumlah_kerugian = parse_currency_fixed($_POST['jumlah_kerugian'] ?? '0');
+        // Pastikan 0 adalah nilai valid
+        if ($jumlah_kerugian === false || $jumlah_kerugian === null) {
+            $jumlah_kerugian = 0;
+        }
         
         // Debug log
         error_log("Upload Kerugian - Original input: " . ($_POST['jumlah_kerugian'] ?? '0'));
@@ -65,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         // Validation
         if (empty($investasi_id) || empty($kategori_id) || empty($judul_kerugian) || 
-            $jumlah_kerugian < 0 || empty($tanggal_kerugian)) {
+            $jumlah_kerugian < 0 || !isset($jumlah_kerugian) || empty($tanggal_kerugian)) {
             throw new Exception('Semua field wajib diisi. Jumlah kerugian harus ≥ 0.');
         }
         
@@ -291,8 +295,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                name="jumlah_kerugian" 
                                id="jumlah_kerugian" 
                                class="form-control" 
-                               placeholder="Contoh: 1500000 atau 1.500.000" 
-                               required>
+                               placeholder="Contoh: 0, 1500000, atau 1.500.000"
+                               required
+                               min="0">
                         <small class="form-hint">Format bebas: 4, 1500000, atau 1.500.000</small>
                     </div>
                     

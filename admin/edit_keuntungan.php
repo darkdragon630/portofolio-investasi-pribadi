@@ -1,13 +1,14 @@
 <?php
 /**
- * SAZEN Investment Portfolio Manager v3.0
+ * SAZEN Investment Portfolio Manager v3.1
  * Edit Keuntungan - Database Storage
- * FIXED: Currency parsing issue
+ * FIXED: Use handle_file_upload_to_db() for base64 storage
  */
 
 session_start();
 require_once "../config/koneksi.php";
 require_once "../config/functions.php";
+require_once "../config/auto_calculate_investment.php"; // ✅ NEW: Auto-calc functions
 
 // Authentication Check
 if (!isset($_SESSION['user_id'])) {
@@ -69,12 +70,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $judul_keuntungan = sanitize_input($_POST['judul_keuntungan'] ?? '');
         $deskripsi = sanitize_input($_POST['deskripsi'] ?? '');
         
-        // USE FIXED PARSER
+        // ✅ USE FIXED PARSER dengan fallback
         $jumlah_keuntungan = parse_currency_fixed($_POST['jumlah_keuntungan'] ?? '0');
         
+        // ✅ Pastikan 0 adalah nilai valid
+        if ($jumlah_keuntungan === false || $jumlah_keuntungan === null) {
+            $jumlah_keuntungan = 0;
+        }
+        
         // Debug log (optional - remove in production)
-        error_log("Edit - Original input: " . ($_POST['jumlah_keuntungan'] ?? '0'));
-        error_log("Edit - Parsed value: " . $jumlah_keuntungan);
+        error_log("Edit Keuntungan - Original input: " . ($_POST['jumlah_keuntungan'] ?? '0'));
+        error_log("Edit Keuntungan - Parsed value: " . $jumlah_keuntungan);
         
         // Parse percentage
         $persentase_input = $_POST['persentase_keuntungan'] ?? '';
@@ -87,9 +93,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $sumber_keuntungan = $_POST['sumber_keuntungan'] ?? 'lainnya';
         $status = $_POST['status'] ?? 'realized';
         
-        // Validation
+        // ✅ FIXED VALIDATION - Accept 0, reject negative and non-numeric
         if (empty($investasi_id) || empty($kategori_id) || empty($judul_keuntungan) || 
-            $jumlah_keuntungan < 0 || empty($tanggal_keuntungan)) {
+            !is_numeric($jumlah_keuntungan) || $jumlah_keuntungan < 0 || empty($tanggal_keuntungan)) {
             throw new Exception('Semua field wajib diisi. Jumlah keuntungan harus ≥ 0.');
         }
         
@@ -102,16 +108,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             if ($invest_data && $invest_data['jumlah'] > 0) {
                 $persentase_keuntungan = $jumlah_keuntungan / $invest_data['jumlah'];
+            } else {
+                // ✅ Handle case jika modal investasi = 0
+                $persentase_keuntungan = 0;
             }
         }
         
-        // Handle file upload
+        // ✅ Handle file upload using handle_file_upload_to_db()
         $bukti_file_data = $keuntungan['bukti_file']; // Keep existing file
         $file_updated = false;
         
         if (isset($_FILES['bukti_file']) && $_FILES['bukti_file']['error'] !== UPLOAD_ERR_NO_FILE) {
             try {
-                $bukti_file_data = file_get_contents($_FILES['bukti_file']['tmp_name']);
+                $bukti_file_data = handle_file_upload_to_db($_FILES['bukti_file']);
                 $file_updated = true;
             } catch (Exception $e) {
                 throw new Exception("Gagal upload bukti: " . $e->getMessage());
@@ -135,19 +144,39 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     tanggal_keuntungan = ?, 
                     sumber_keuntungan = ?, 
                     status = ?, 
-                    bukti_file = ?
+                    bukti_file = ?,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?";
         
         $stmt = $koneksi->prepare($sql);
-        if ($stmt->execute([
+        $result = $stmt->execute([
             $investasi_id, $kategori_id, $judul_keuntungan, $deskripsi,
             $jumlah_keuntungan, $persentase_keuntungan, $tanggal_keuntungan,
             $sumber_keuntungan, $status, $bukti_file_data, $keuntungan_id
-        ])) {
+        ]);
+        
+        if ($result) {
+            // ✅ AUTO RECALCULATE INVESTMENT
+            $calc_result = trigger_after_profit_added($koneksi, $keuntungan_id);
+            
+            if (!$calc_result['success']) {
+                throw new Exception("Gagal recalculate: " . $calc_result['error']);
+            }
+            
+            // Success message with new calculated values
             $msg = "✅ Keuntungan berhasil diperbarui!";
             if ($file_updated) {
                 $msg .= $bukti_file_data ? " 📎 Bukti diperbarui" : " 🗑️ Bukti dihapus";
             }
+            
+            // ✅ Tambah info jika nilai keuntungan = 0
+            if ($jumlah_keuntungan == 0) {
+                $msg .= "\n💡 Keuntungan tercatat dengan nilai Rp 0";
+            }
+            
+            $msg .= "\n📊 Nilai investasi diupdate otomatis: " . 
+                    format_currency($calc_result['new_value']) . 
+                    " (ROI: " . number_format($calc_result['roi'], 2) . "%)";
             
             redirect_with_message("../dashboard.php", "success", $msg);
         } else {
@@ -169,7 +198,7 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edit Keuntungan - SAZEN v3.0</title>
+    <title>Edit Keuntungan - SAZEN v3.1</title>
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -191,20 +220,21 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                 </div>
                 <h1>Edit Keuntungan</h1>
                 <p>Perbarui data keuntungan investasi Anda</p>
+                <span class="version-badge">v3.1 - Auto Calculate</span>
             </div>
 
             <!-- ===== MESSAGES ===== -->
             <?php if ($error): ?>
                 <div class="alert alert-error">
                     <i class="fas fa-exclamation-circle"></i>
-                    <span><?= htmlspecialchars($error) ?></span>
+                    <span><?= nl2br(htmlspecialchars($error)) ?></span>
                 </div>
             <?php endif; ?>
 
             <?php if ($success): ?>
                 <div class="alert alert-success">
                     <i class="fas fa-check-circle"></i>
-                    <span><?= htmlspecialchars($success) ?></span>
+                    <span><?= nl2br(htmlspecialchars($success)) ?></span>
                 </div>
             <?php endif; ?>
 
@@ -271,10 +301,11 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                                name="jumlah_keuntungan" 
                                id="jumlah_keuntungan" 
                                class="form-control" 
-                               placeholder="Contoh: 1500000 atau 1.500.000"
-                               value="<?= number_format($keuntungan['jumlah_keuntungan'], 0, ',', '.') ?>" 
-                               required>
-                        <small class="form-hint">Format bebas: 4, 1500000, atau 1.500.000</small>
+                               placeholder="Contoh: 0, 1500000, atau 1.500.000"
+                               value="<?= $keuntungan['jumlah_keuntungan'] == 0 ? '0' : number_format($keuntungan['jumlah_keuntungan'], 0, ',', '.') ?>" 
+                               required
+                               min="0">
+                        <small class="form-hint">Format bebas: 0, 1500000, atau 1.500.000 (nilai 0 diperbolehkan)</small>
                     </div>
                     
                     <div class="form-group">
@@ -315,7 +346,7 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                         Sumber Keuntungan *
                     </label>
                     <div class="radio-grid">
-                        <label class="radio-card">
+                        <label class="radio-card <?= $keuntungan['sumber_keuntungan'] == 'dividen' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_keuntungan" 
                                    value="dividen" 
@@ -327,7 +358,7 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                             </div>
                         </label>
                         
-                        <label class="radio-card">
+                        <label class="radio-card <?= $keuntungan['sumber_keuntungan'] == 'capital_gain' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_keuntungan" 
                                    value="capital_gain" 
@@ -339,7 +370,7 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                             </div>
                         </label>
                         
-                        <label class="radio-card">
+                        <label class="radio-card <?= $keuntungan['sumber_keuntungan'] == 'bunga' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_keuntungan" 
                                    value="bunga" 
@@ -351,7 +382,7 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                             </div>
                         </label>
                         
-                        <label class="radio-card">
+                        <label class="radio-card <?= $keuntungan['sumber_keuntungan'] == 'bonus' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_keuntungan" 
                                    value="bonus" 
@@ -363,7 +394,7 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                             </div>
                         </label>
 
-                        <label class="radio-card">
+                        <label class="radio-card <?= $keuntungan['sumber_keuntungan'] == 'imbal_hasil' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_keuntungan" 
                                    value="imbal_hasil"
@@ -375,7 +406,7 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                             </div>
                         </label>
                         
-                        <label class="radio-card">
+                        <label class="radio-card <?= $keuntungan['sumber_keuntungan'] == 'lainnya' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="sumber_keuntungan" 
                                    value="lainnya" 
@@ -396,7 +427,7 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                         Status *
                     </label>
                     <div class="radio-grid status-grid">
-                        <label class="radio-card">
+                        <label class="radio-card <?= $keuntungan['status'] == 'realized' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="status" 
                                    value="realized" 
@@ -408,7 +439,7 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                             </div>
                         </label>
                         
-                        <label class="radio-card">
+                        <label class="radio-card <?= $keuntungan['status'] == 'unrealized' ? 'selected' : '' ?>">
                             <input type="radio" 
                                    name="status" 
                                    value="unrealized" 
@@ -510,6 +541,14 @@ $persentase_display = $keuntungan['persentase_keuntungan'] ?
                 fileLabel.style.pointerEvents = 'auto';
             }
         });
+        
+        // ✅ Override default date behavior for edit form
+        // Do NOT set default date on edit page
+        const tanggalInput = document.getElementById('tanggal_keuntungan');
+        if (tanggalInput && !tanggalInput.value) {
+            // Only set today if field is somehow empty (shouldn't happen in edit mode)
+            tanggalInput.value = new Date().toISOString().split('T')[0];
+        }
     </script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 <?php
 /**
- * Form Cash Balance Management
+ * Form Cash Balance Management - FIXED untuk accept 0 dan desimal
  */
 
 session_start();
@@ -21,9 +21,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $tanggal = $_POST['tanggal'];
     $judul = sanitize_input($_POST['judul']);
     $tipe = $_POST['tipe'];
-    $jumlah = (float)str_replace(',', '.', str_replace('.', '', $_POST['jumlah']));
+    
+    // ✅ USE FIXED PARSER untuk accept 0 dan desimal
+    $jumlah = parse_currency_fixed($_POST['jumlah'] ?? '0');
+    
+    // ✅ Pastikan 0 adalah nilai valid
+    if ($jumlah === false || $jumlah === null) {
+        $jumlah = 0;
+    }
+    
     $kategori = $_POST['kategori'];
     $keterangan = sanitize_input($_POST['keterangan'] ?? '');
+    
+    // Debug log
+    error_log("Cash Balance - Original input: " . ($_POST['jumlah'] ?? '0'));
+    error_log("Cash Balance - Parsed value: " . $jumlah);
     
     // Validate
     if (empty($tanggal)) {
@@ -35,8 +47,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!in_array($tipe, ['masuk', 'keluar'])) {
         $errors[] = "Tipe transaksi tidak valid";
     }
-    if ($jumlah <= 0) {
-        $errors[] = "Jumlah harus lebih dari 0";
+    // ✅ FIXED: Accept 0, reject negative and non-numeric
+    if (!is_numeric($jumlah) || $jumlah < 0) {
+        $errors[] = "Jumlah harus ≥ 0";
     }
     if (empty($kategori)) {
         $errors[] = "Kategori harus dipilih";
@@ -46,7 +59,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $bukti_file = null;
     if (isset($_FILES['bukti_file']) && $_FILES['bukti_file']['error'] === UPLOAD_ERR_OK) {
         try {
-            // Untuk LONGBLOB, simpan sebagai base64 dengan metadata JSON
             $bukti_file = handle_file_upload_to_db($_FILES['bukti_file']);
         } catch (Exception $e) {
             $errors[] = "Upload error: " . $e->getMessage();
@@ -71,7 +83,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             
             if ($result) {
-                redirect_with_message("../dashboard.php", 'success', 'Transaksi kas berhasil dicatat!');
+                $msg = 'Transaksi kas berhasil dicatat!';
+                // ✅ Tambah info jika nilai = 0
+                if ($jumlah == 0) {
+                    $msg .= ' (Jumlah: Rp 0)';
+                }
+                redirect_with_message("../dashboard.php", 'success', $msg);
             } else {
                 $errors[] = "Gagal menyimpan transaksi kas";
             }
@@ -91,7 +108,7 @@ $recent_transactions = get_recent_cash_transactions($koneksi);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kelola Kas - SAZEN</title>
+    <title>Kelola Kas - SAZEN v3.1</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../css/dashboard.css">
@@ -107,6 +124,7 @@ $recent_transactions = get_recent_cash_transactions($koneksi);
         <div class="form-title">
             <h1><i class="fas fa-wallet"></i> Kelola Kas</h1>
             <p>Catat transaksi kas masuk dan keluar</p>
+            <span class="version-badge">v3.1</span>
         </div>
     </div>
 
@@ -174,7 +192,11 @@ $recent_transactions = get_recent_cash_transactions($koneksi);
                 <div class="form-group">
                     <label for="jumlah">Jumlah <span class="required">*</span></label>
                     <input type="text" name="jumlah" id="jumlah" 
-                           placeholder="0" required class="currency-input">
+                           placeholder="Contoh: 0, 0.82, 1500000, atau 1.500.000" 
+                           required 
+                           class="currency-input"
+                           min="0">
+                    <small>Format bebas: 0, 0.82, 1500000, atau 1.500.000 (nilai 0 diperbolehkan)</small>
                 </div>
 
                 <div class="form-group">
@@ -234,7 +256,7 @@ $recent_transactions = get_recent_cash_transactions($koneksi);
                     </div>
                     <div class="transaction-actions">
                         <?php if (!empty($cash['bukti_file'])): ?>
-                            <a href="view_cash.php?id=<?= $cash['id'] ?>"class="btn-icon" title="Detail">
+                            <a href="view_cash.php?id=<?= $cash['id'] ?>" class="btn-icon" title="Detail">
                                 <i class="fas fa-eye"></i>
                             </a>
                         <?php endif; ?>
@@ -254,10 +276,48 @@ $recent_transactions = get_recent_cash_transactions($koneksi);
 </div>
 
 <script>
-// Format currency input
-document.getElementById('jumlah').addEventListener('input', function(e) {
-    let value = e.target.value.replace(/\D/g, '');
-    e.target.value = new Intl.NumberFormat('id-ID').format(value);
+// ✅ FIXED CURRENCY FORMATTER - Support desimal dan 0
+const jumlahInput = document.getElementById('jumlah');
+
+jumlahInput.addEventListener('blur', function() {
+    let v = this.value
+        .replace(/[^\d,.]/g, '')   // buang selain digit, koma, titik
+        .replace(/,/g, '#')        // tandai koma asli
+        .replace(/\./g, '')        // buang titik ribuan sementara
+        .replace(/#/g, '.');       // kembalikan koma jadi titik desimal
+
+    const num = parseFloat(v);
+    
+    // ✅ Jangan set ke "0" kalau user belum input apa-apa
+    if (v.trim() === '') {
+        return;
+    }
+    
+    // ✅ Handle nilai 0 dengan benar
+    if (isNaN(num)) {
+        this.value = '0';
+    } else if (num === 0) {
+        this.value = '0';
+    } else {
+        this.value = num.toLocaleString('id-ID', { 
+            minimumFractionDigits: 0, 
+            maximumFractionDigits: 2 
+        });
+    }
+});
+
+jumlahInput.addEventListener('focus', function() {
+    // ✅ Jangan manipulasi kalau value = "0"
+    if (this.value === '0' || this.value === '0,00') {
+        this.value = '0';
+        this.select();
+        return;
+    }
+    
+    this.value = this.value
+        .replace(/[^\d,.]/g, '')
+        .replace(/\./g, '')   // buang titik ribuan
+        .replace(/,/g, '.');  // koma jadi titik desimal
 });
 
 // Change form color based on type
@@ -272,21 +332,60 @@ document.getElementById('tipe').addEventListener('change', function() {
     }
 });
 
-// Form validation
+// ✅ FIXED FORM VALIDATION - Accept 0
 document.getElementById('cashForm').addEventListener('submit', function(e) {
-    const jumlah = document.getElementById('jumlah').value;
+    const rawValue = document.getElementById('jumlah').value.trim();
     
-    if (!jumlah || parseFloat(jumlah.replace(/\./g, '')) <= 0) {
+    // Check kalau field kosong
+    if (rawValue === '') {
         e.preventDefault();
-        alert('Jumlah harus diisi dan lebih dari 0');
+        alert('❌ Jumlah harus diisi!');
+        document.getElementById('jumlah').focus();
         return false;
     }
     
+    // Parse value
+    const raw = rawValue
+        .replace(/[^\d,.]/g, '')
+        .replace(/\./g, '')
+        .replace(/,/g, '.');
+    
+    const jumlah = parseFloat(raw);
+    
+    // Check NaN setelah parsing
+    if (isNaN(jumlah)) {
+        e.preventDefault();
+        alert('❌ Format jumlah tidak valid!');
+        document.getElementById('jumlah').focus();
+        return false;
+    }
+    
+    // ✅ HANYA tolak nilai negatif, terima 0 dan positif
+    if (jumlah < 0) {
+        e.preventDefault();
+        alert('❌ Jumlah tidak boleh negatif!');
+        document.getElementById('jumlah').focus();
+        return false;
+    }
+    
+    // ✅ Nilai 0 dan positif diperbolehkan
+    console.log('✅ Form valid, jumlah:', jumlah);
     return true;
 });
 </script>
 
 <style>
+.version-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 12px;
+}
+
 .alert-success {
     background: #d1fae5;
     color: #065f46;

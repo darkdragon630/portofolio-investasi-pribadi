@@ -1,7 +1,7 @@
 <?php
 /**
- * SAZEN Investment Portfolio Manager v3.0
- * Edit Cash Balance Transaction
+ * SAZEN Investment Portfolio Manager v3.1
+ * Edit Cash Balance Transaction - FIXED untuk accept 0 dan desimal
  */
 
 session_start();
@@ -40,9 +40,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $judul = trim($_POST['judul']);
     $tipe = $_POST['tipe'];
     $kategori = $_POST['kategori'];
-    $jumlah = (float)str_replace(['.', ','], ['', '.'], $_POST['jumlah']);
+    
+    // ✅ USE FIXED PARSER untuk accept 0 dan desimal
+    $jumlah = parse_currency_fixed($_POST['jumlah'] ?? '0');
+    
+    // ✅ Pastikan 0 adalah nilai valid
+    if ($jumlah === false || $jumlah === null) {
+        $jumlah = 0;
+    }
+    
     $tanggal = $_POST['tanggal'];
     $keterangan = trim($_POST['keterangan']);
+    
+    // Debug log
+    error_log("Edit Cash - Original input: " . ($_POST['jumlah'] ?? '0'));
+    error_log("Edit Cash - Parsed value: " . $jumlah);
     
     // Validation
     $errors = [];
@@ -50,7 +62,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $allowed_kategori = ['modal_awal', 'top_up', 'hasil_jual', 'tarik_dana', 'investasi_baru', 'dividen', 'lainnya'];
     
     if (empty($judul)) $errors[] = "Judul tidak boleh kosong";
-    if ($jumlah <= 0) $errors[] = "Jumlah harus lebih dari 0";
+    // ✅ FIXED: Accept 0, reject negative and non-numeric
+    if (!is_numeric($jumlah) || $jumlah < 0) $errors[] = "Jumlah harus ≥ 0";
     if (empty($tanggal)) $errors[] = "Tanggal tidak boleh kosong";
     if (!in_array($tipe, $allowed_tipe)) $errors[] = "Tipe transaksi tidak valid";
     if (!in_array($kategori, $allowed_kategori)) $errors[] = "Kategori tidak valid";
@@ -97,7 +110,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     jumlah = ?, 
                     tanggal = ?, 
                     keterangan = ?, 
-                    bukti_file = ?
+                    bukti_file = ?,
+                    updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?";
             
             $stmt = $koneksi->prepare($sql);
@@ -112,7 +126,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $cash_id
             ]);
             
-            set_flash_message('success', 'Transaksi kas berhasil diupdate!');
+            $msg = 'Transaksi kas berhasil diupdate!';
+            // ✅ Tambah info jika nilai = 0
+            if ($jumlah == 0) {
+                $msg .= ' (Jumlah: Rp 0)';
+            }
+            
+            set_flash_message('success', $msg);
             header("Location: cash_balance.php");
             exit;
             
@@ -129,7 +149,7 @@ $page_title = "Edit Transaksi Kas";
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $page_title ?> - SAZEN</title>
+    <title><?= $page_title ?> - SAZEN v3.1</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -234,6 +254,17 @@ $page_title = "Edit Transaksi Kas";
         .admin-header h1 i {
             color: var(--primary);
             font-size: 26px;
+        }
+
+        .version-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 8px;
         }
 
         .alert {
@@ -552,7 +583,10 @@ $page_title = "Edit Transaksi Kas";
             <a href="cash_balance.php" class="back-btn">
                 <i class="fas fa-arrow-left"></i> Kembali
             </a>
-            <h1><i class="fas fa-edit"></i> <?= $page_title ?></h1>
+            <h1>
+                <i class="fas fa-edit"></i> <?= $page_title ?>
+                <span class="version-badge">v3.1</span>
+            </h1>
         </div>
 
         <?php if (!empty($errors)): ?>
@@ -618,10 +652,11 @@ $page_title = "Edit Transaksi Kas";
                         <input type="text" 
                                id="jumlah" 
                                name="jumlah" 
-                               value="<?= number_format($cash['jumlah'], 0, ',', '.') ?>" 
-                               placeholder="0" 
-                               required>
-                        <small>Gunakan titik atau koma sebagai pemisah ribuan</small>
+                               value="<?= $cash['jumlah'] == 0 ? '0' : number_format($cash['jumlah'], 2, ',', '.') ?>" 
+                               placeholder="Contoh: 0, 0.82, 1500000, atau 1.500.000" 
+                               required
+                               min="0">
+                        <small>Format bebas: 0, 0.82, 1500000, atau 1.500.000 (nilai 0 diperbolehkan)</small>
                     </div>
 
                     <div class="form-group">
@@ -679,20 +714,88 @@ $page_title = "Edit Transaksi Kas";
     </div>
 
     <script>
-        // Format currency input
-        document.getElementById('jumlah').addEventListener('input', function(e) {
-            let value = e.target.value.replace(/[^\d]/g, '');
-            e.target.value = new Intl.NumberFormat('id-ID').format(value);
-        });
+        // ✅ FIXED CURRENCY FORMATTER - Support desimal dan 0
+        const jumlahInput = document.getElementById('jumlah');
 
-        // Form validation
-        document.querySelector('.admin-form').addEventListener('submit', function(e) {
-            const jumlah = document.getElementById('jumlah').value.replace(/\./g, '');
-            if (parseInt(jumlah) <= 0) {
-                e.preventDefault();
-                alert('Jumlah harus lebih dari 0');
+        jumlahInput.addEventListener('blur', function() {
+            let v = this.value
+                .replace(/[^\d,.]/g, '')   // buang selain digit, koma, titik
+                .replace(/,/g, '#')        // tandai koma asli
+                .replace(/\./g, '')        // buang titik ribuan sementara
+                .replace(/#/g, '.');       // kembalikan koma jadi titik desimal
+
+            const num = parseFloat(v);
+            
+            // ✅ Jangan set ke "0" kalau user belum input apa-apa
+            if (v.trim() === '') {
                 return;
             }
+            
+            // ✅ Handle nilai 0 dengan benar
+            if (isNaN(num)) {
+                this.value = '0';
+            } else if (num === 0) {
+                this.value = '0';
+            } else {
+                this.value = num.toLocaleString('id-ID', { 
+                    minimumFractionDigits: 0, 
+                    maximumFractionDigits: 2 
+                });
+            }
+        });
+
+        jumlahInput.addEventListener('focus', function() {
+            // ✅ Jangan manipulasi kalau value = "0"
+            if (this.value === '0' || this.value === '0,00') {
+                this.value = '0';
+                this.select();
+                return;
+            }
+            
+            this.value = this.value
+                .replace(/[^\d,.]/g, '')
+                .replace(/\./g, '')   // buang titik ribuan
+                .replace(/,/g, '.');  // koma jadi titik desimal
+        });
+
+        // ✅ FIXED FORM VALIDATION - Accept 0
+        document.querySelector('.admin-form').addEventListener('submit', function(e) {
+            const rawValue = document.getElementById('jumlah').value.trim();
+            
+            // Check kalau field kosong
+            if (rawValue === '') {
+                e.preventDefault();
+                alert('❌ Jumlah harus diisi!');
+                document.getElementById('jumlah').focus();
+                return;
+            }
+            
+            // Parse value
+            const raw = rawValue
+                .replace(/[^\d,.]/g, '')
+                .replace(/\./g, '')
+                .replace(/,/g, '.');
+            
+            const jumlah = parseFloat(raw);
+            
+            // Check NaN setelah parsing
+            if (isNaN(jumlah)) {
+                e.preventDefault();
+                alert('❌ Format jumlah tidak valid!');
+                document.getElementById('jumlah').focus();
+                return;
+            }
+            
+            // ✅ HANYA tolak nilai negatif, terima 0 dan positif
+            if (jumlah < 0) {
+                e.preventDefault();
+                alert('❌ Jumlah tidak boleh negatif!');
+                document.getElementById('jumlah').focus();
+                return;
+            }
+            
+            // ✅ Nilai 0 dan positif diperbolehkan
+            console.log('✅ Form valid, jumlah:', jumlah);
             
             // Disable submit button to prevent double submission
             const submitBtn = this.querySelector('.btn-primary');

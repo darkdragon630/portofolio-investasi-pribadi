@@ -349,18 +349,19 @@ function get_default_maintenance_html() {
         
         <div class="message">
             <p>LUMINARK HOLDINGS Portfolio Manager sedang dalam proses pemeliharaan untuk peningkatan sistem.</p>
+            <p>Dan sedang melakukan rebalancing alokasi portofolio investasi pribadi .</p>
             <p>Kami akan segera kembali online dalam waktu singkat.</p>
         </div>
 
         <div class="status">
             <strong>Status:</strong> Maintenance Mode Aktif<br>
-            <strong>Perkiraan Selesai:</strong> 1-2 Jam
+            <strong>Perkiraan Selesai:</strong> 1-3 Hari
         </div>
 
         <div class="contact">
             <strong>Butuh Bantuan?</strong><br>
-            Email: support@sazen.com<br>
-            Telepon: +62 123 4567 890
+            Email: burhanjepara41@gmail.com<br>
+            Telepon: +62 89635637904
         </div>
 
         <div class="footer">
